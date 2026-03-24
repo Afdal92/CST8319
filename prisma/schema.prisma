@@ -1,0 +1,83 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id            Int             @id @default(autoincrement())
+  name          String
+  email         String          @unique
+  passwordHash  String
+  createdAt     DateTime        @default(now())
+
+  ownedProjects Project[]       @relation("ProjectOwner")
+  memberships   ProjectMember[]
+  assignedTasks Task[]          @relation("AssignedTasks")
+  createdTasks  Task[]          @relation("CreatedTasks")
+}
+
+model Project {
+  id           Int             @id @default(autoincrement())
+  name         String
+  description  String?
+  joinCode     String          @unique
+  archived     Boolean         @default(false)
+  createdAt    DateTime        @default(now())
+
+  ownerUserId  Int
+  owner        User            @relation("ProjectOwner", fields: [ownerUserId], references: [id])
+
+  members      ProjectMember[]
+  sprints      Sprint[]
+  tasks        Task[]
+}
+
+model ProjectMember {
+  id         Int      @id @default(autoincrement())
+  role       String
+  joinedAt   DateTime @default(now())
+
+  userId     Int
+  projectId  Int
+
+  user       User     @relation(fields: [userId], references: [id])
+  project    Project  @relation(fields: [projectId], references: [id])
+
+  @@unique([userId, projectId])
+}
+
+model Sprint {
+  id         Int      @id @default(autoincrement())
+  name       String
+  startDate  DateTime
+  endDate    DateTime
+  createdAt  DateTime @default(now())
+
+  projectId  Int
+  project    Project  @relation(fields: [projectId], references: [id])
+
+  tasks      Task[]
+}
+
+model Task {
+  id           Int       @id @default(autoincrement())
+  title        String
+  description  String?
+  status       String    @default("TODO")
+  dueDate      DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  projectId    Int
+  sprintId     Int?
+  assignedToId Int?
+  createdById  Int
+
+  project      Project   @relation(fields: [projectId], references: [id])
+  sprint       Sprint?   @relation(fields: [sprintId], references: [id])
+  assignedTo   User?     @relation("AssignedTasks", fields: [assignedToId], references: [id])
+  createdBy    User      @relation("CreatedTasks", fields: [createdById], references: [id])
+}
