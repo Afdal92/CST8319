@@ -1,0 +1,125 @@
+.project-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #f1f5f9;
+}
+
+.project-page__main {
+  flex: 1;
+}
+
+.project-view-toggle .btn {
+  border-radius: 10px;
+  font-weight: 600;
+  font-size: 0.875rem;
+  padding: 0.45rem 1rem;
+}
+
+.project-view-toggle .btn-outline-secondary {
+  border-color: #e2e8f0;
+  color: #64748b;
+  background: #fff;
+}
+
+.project-view-toggle .btn-check:checked + .btn-outline-secondary {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.kanban-col {
+  border-radius: 14px;
+  padding: 0.75rem;
+  min-height: 420px;
+}
+
+.kanban-col--todo {
+  background: #f1f5f9;
+}
+
+.kanban-col--progress {
+  background: #e8f4fc;
+}
+
+.kanban-col--done {
+  background: #e8f8ef;
+}
+
+.kanban-task-card {
+  background: #fff;
+  border: 1px solid #e8ecf1;
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.kanban-task-card__menu {
+  border: none;
+  background: transparent;
+  padding: 0.15rem;
+  color: #94a3b8;
+  line-height: 1;
+}
+
+.backlog-sprint-card {
+  background: #fff;
+  border: 1px solid #eef0f4;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+}
+
+.backlog-row {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 0.85rem 1rem;
+}
+
+.backlog-row:last-child {
+  border-bottom: none;
+}
+
+.backlog-row--done .backlog-row__title {
+  text-decoration: line-through;
+  color: #94a3b8;
+}
+
+.priority-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+}
+
+.priority-pill--high {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.priority-pill--med {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.priority-pill--low {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.btn-project-primary {
+  background: #5d45fd;
+  border: none;
+  color: #fff;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 0.45rem 1rem;
+}
+
+.btn-project-primary:hover {
+  background: #4f3ae0;
+  color: #fff;
+}
+
+.btn-project-primary:disabled {
+  opacity: 0.55;
+}

@@ -1,0 +1,45 @@
+const PURPLE = '#5d45fd';
+const TRACK = '#e2e8f0';
+
+/** @param {{ percent: number; completed: number; remaining: number }} props */
+export default function DonutProgress({ percent, completed, remaining }) {
+  const r = 52;
+  const c = 2 * Math.PI * r;
+  const p = Math.min(100, Math.max(0, percent));
+  const dash = (p / 100) * c;
+
+  return (
+    <div className="donut-progress text-center">
+      <svg width="160" height="160" viewBox="0 0 120 120" className="mx-auto d-block">
+        <circle cx="60" cy="60" r={r} fill="none" stroke={TRACK} strokeWidth="14" />
+        <circle
+          cx="60"
+          cy="60"
+          r={r}
+          fill="none"
+          stroke={PURPLE}
+          strokeWidth="14"
+          strokeLinecap="round"
+          strokeDasharray={`${dash} ${c}`}
+          transform="rotate(-90 60 60)"
+        />
+        <text x="60" y="56" textAnchor="middle" className="donut-progress__pct" fill="#0f172a" fontSize="18" fontWeight="700">
+          {Math.round(p)}%
+        </text>
+        <text x="60" y="74" textAnchor="middle" fill="#64748b" fontSize="9" fontWeight="600">
+          Done
+        </text>
+      </svg>
+      <div className="d-flex justify-content-center gap-4 mt-2 small">
+        <span className="d-flex align-items-center gap-2 text-secondary">
+          <span className="rounded-circle" style={{ width: 8, height: 8, background: PURPLE }} />
+          Completed <strong className="text-dark ms-1">{completed}</strong>
+        </span>
+        <span className="d-flex align-items-center gap-2 text-secondary">
+          <span className="rounded-circle" style={{ width: 8, height: 8, background: TRACK }} />
+          To Do / In Progress <strong className="text-dark ms-1">{remaining}</strong>
+        </span>
+      </div>
+    </div>
+  );
+}
