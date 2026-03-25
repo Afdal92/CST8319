@@ -26,6 +26,26 @@ const createSprint = async (req, res) => {
   }
 };
 
+const deleteSprint = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.task.updateMany({
+      where: { sprintId: Number(id) },
+      data: { sprintId: null }
+    });
+
+    await prisma.sprint.delete({
+      where: { id: Number(id) }
+    });
+
+    res.json({ message: 'Sprint deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
-  createSprint
+  createSprint,
+  deleteSprint
 };

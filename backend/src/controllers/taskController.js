@@ -70,8 +70,23 @@ const getProjectTasks = async (req, res) => {
   }
 };
 
+const deleteTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    await prisma.task.delete({
+      where: { id: Number(id) }
+    });
+
+    res.json({ message: 'Task deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   createTask,
   updateTaskStatus,
-  getProjectTasks
+  getProjectTasks,
+  deleteTask
 };
