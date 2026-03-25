@@ -96,8 +96,47 @@ const getMyProjects = async (req, res) => {
   }
 };
 
+const deleteProject = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const project = await prisma.project.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (project.ownerUserId !== req.user.id) {
+      return res.status(403).json({ message: 'Only the project owner can delete this project' });
+    }
+
+    await prisma.projectMember.deleteMany({
+      where: { projectId: Number(id) }
+    });
+
+    await prisma.task.deleteMany({
+      where: { projectId: Number(id) }
+    });
+
+    await prisma.sprint.deleteMany({
+      where: { projectId: Number(id) }
+    });
+
+    await prisma.project.delete({
+      where: { id: Number(id) }
+    });
+
+    res.json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 module.exports = {
   createProject,
   joinProject,
-  getMyProjects
+  getMyProjects,
+  deleteProject
 };
