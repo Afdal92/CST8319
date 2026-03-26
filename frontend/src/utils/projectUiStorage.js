@@ -6,7 +6,13 @@ function readRoot() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return { sprints: {}, priorities: {}, removedTasks: {}, removedSprints: {} };
+      return {
+        sprints: {},
+        priorities: {},
+        removedTasks: {},
+        removedSprints: {},
+        taskOverrides: {},
+      };
     }
     const p = JSON.parse(raw);
     return {
@@ -14,9 +20,17 @@ function readRoot() {
       priorities: typeof p.priorities === 'object' && p.priorities ? p.priorities : {},
       removedTasks: typeof p.removedTasks === 'object' && p.removedTasks ? p.removedTasks : {},
       removedSprints: typeof p.removedSprints === 'object' && p.removedSprints ? p.removedSprints : {},
+      taskOverrides:
+        typeof p.taskOverrides === 'object' && p.taskOverrides ? p.taskOverrides : {},
     };
   } catch {
-    return { sprints: {}, priorities: {}, removedTasks: {}, removedSprints: {} };
+    return {
+      sprints: {},
+      priorities: {},
+      removedTasks: {},
+      removedSprints: {},
+      taskOverrides: {},
+    };
   }
 }
 
@@ -59,6 +73,69 @@ export function saveTaskPriority(projectId, taskId, priority) {
   writeRoot(root);
 }
 
+/**
+ * Merge server task row with per-device edits (title / description / sprintId).
+ * Backend has no PATCH for these fields; overrides match how priority is stored.
+ */
+export function mergeTaskWithUi(projectId, task) {
+  const o = readRoot().taskOverrides[String(projectId)]?.[String(task.id)] ?? {};
+  return {
+    ...task,
+    ...(typeof o.title === 'string' ? { title: o.title } : {}),
+    ...(o.description !== undefined ? { description: o.description } : {}),
+    ...(o.sprintId !== undefined ? { sprintId: o.sprintId } : {}),
+  };
+}
+
+function normDescription(d) {
+  if (d == null || d === '') return null;
+  return String(d);
+}
+
+/**
+ * Persist title, description, sprintId overrides vs server task. Omits keys that match server.
+ */
+export function persistTaskEdit(projectId, serverTask, { title, description, sprintId }) {
+  const pk = String(projectId);
+  const tk = String(serverTask.id);
+  const root = readRoot();
+  if (!root.taskOverrides[pk]) root.taskOverrides[pk] = {};
+
+  const next = { ...(root.taskOverrides[pk][tk] || {}) };
+  const trimmedTitle = title.trim();
+  if (trimmedTitle === serverTask.title) delete next.title;
+  else next.title = trimmedTitle;
+
+  const sd = normDescription(serverTask.description);
+  const fd = normDescription(description);
+  if (fd === sd) delete next.description;
+  else next.description = fd;
+
+  const ss = serverTask.sprintId == null ? null : Number(serverTask.sprintId);
+  const fs = sprintId == null || !Number.isFinite(Number(sprintId)) ? null : Number(sprintId);
+  if (fs === ss) delete next.sprintId;
+  else next.sprintId = fs;
+
+  if (Object.keys(next).length === 0) {
+    delete root.taskOverrides[pk][tk];
+    if (Object.keys(root.taskOverrides[pk]).length === 0) delete root.taskOverrides[pk];
+  } else {
+    root.taskOverrides[pk][tk] = next;
+  }
+  writeRoot(root);
+}
+
+export function clearTaskUiOverrides(projectId, taskId) {
+  const root = readRoot();
+  const pk = String(projectId);
+  const tk = String(taskId);
+  if (root.taskOverrides[pk]?.[tk]) {
+    delete root.taskOverrides[pk][tk];
+    if (Object.keys(root.taskOverrides[pk]).length === 0) delete root.taskOverrides[pk];
+    writeRoot(root);
+  }
+}
+
 export function formatSprintDateRange(startDate, endDate) {
   if (!startDate || !endDate) return '';
   try {
@@ -95,6 +172,7 @@ export function removeTaskLocally(projectId, taskId) {
   if (!root.removedTasks[pk]) root.removedTasks[pk] = [];
   if (!root.removedTasks[pk].includes(tk)) root.removedTasks[pk].push(tk);
   if (root.priorities[pk]) delete root.priorities[pk][tk];
+  if (root.taskOverrides[pk]) delete root.taskOverrides[pk][tk];
   writeRoot(root);
 }
 
@@ -115,6 +193,7 @@ export function removeSprintLocally(projectId, sprintId, taskIdsInSprint = []) {
     const tk = String(tid);
     if (!rt.includes(tk)) rt.push(tk);
     if (root.priorities[pk]) delete root.priorities[pk][tk];
+    if (root.taskOverrides[pk]) delete root.taskOverrides[pk][tk];
   }
   writeRoot(root);
 }

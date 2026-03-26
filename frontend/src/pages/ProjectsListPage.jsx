@@ -82,7 +82,6 @@ export default function ProjectsListPage() {
                           {p.description}
                         </p>
                       ) : null}
-                      <span className="small text-muted">Invite code {p.joinCode}</span>
                     </div>
                   </div>
                 </Link>
