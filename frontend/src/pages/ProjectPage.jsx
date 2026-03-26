@@ -22,6 +22,8 @@ import {
   isTaskRemovedLocally,
   removeTaskLocally,
   removeSprintLocally,
+  mergeTaskWithUi,
+  persistTaskEdit,
 } from '../utils/projectUiStorage.js';
 import './DashboardPage.css';
 import './ProjectPage.css';
@@ -89,7 +91,7 @@ function assigneeInitial(task) {
   return String.fromCharCode(65 + (Math.abs(n) % 26));
 }
 
-function TaskCardMenu({ task, onStatus, onPriority, onDelete }) {
+function TaskCardMenu({ task, onStatus, onPriority, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="position-relative">
@@ -138,11 +140,23 @@ function TaskCardMenu({ task, onStatus, onPriority, onDelete }) {
                 Low
               </button>
             </li>
-            <li><hr className="dropdown-divider my-1" /></li>
-            <li className="px-3 py-1 small text-muted" style={{ whiteSpace: 'normal' }}>
-              Which sprint a task belongs to is set when you create it. To move it to another sprint, create a new task and
-              remove the old one if you no longer need it.
-            </li>
+            {onEdit ? (
+              <>
+                <li><hr className="dropdown-divider my-1" /></li>
+                <li>
+                  <button
+                    type="button"
+                    className="dropdown-item small"
+                    onClick={() => {
+                      onEdit();
+                      setOpen(false);
+                    }}
+                  >
+                    Edit task…
+                  </button>
+                </li>
+              </>
+            ) : null}
             <li><hr className="dropdown-divider my-1" /></li>
             <li>
               <button
@@ -172,6 +186,7 @@ function KanbanColumn({
   onAdd,
   onStatusChange,
   onPriorityChange,
+  onEditTask,
   onDeleteTask,
 }) {
   return (
@@ -202,6 +217,7 @@ function KanbanColumn({
                   task={t}
                   onStatus={(s) => onStatusChange(t.id, s)}
                   onPriority={(p) => onPriorityChange(t.id, p)}
+                  onEdit={() => onEditTask(t)}
                   onDelete={() => onDeleteTask(t.id)}
                 />
               </div>
@@ -254,6 +270,8 @@ export default function ProjectPage() {
   const [addSprintId, setAddSprintId] = useState(null);
   const [addError, setAddError] = useState('');
   const [addSaving, setAddSaving] = useState(false);
+  /** When set, the task modal is editing this task id instead of creating. */
+  const [editTaskId, setEditTaskId] = useState(null);
 
   const [sprintModal, setSprintModal] = useState(false);
   const [sprintName, setSprintName] = useState('Sprint');
@@ -311,15 +329,18 @@ export default function ProjectPage() {
     loadData();
   }, [loadData]);
 
-  /** Tasks from the server, excluding ones hidden locally in this browser. */
-  const visibleTasks = useMemo(
-    () => tasks.filter((t) => !isTaskRemovedLocally(pid, t.id)),
+  /** Server tasks minus locally hidden rows, merged with per-device title/description/sprint overrides. */
+  const displayTasks = useMemo(
+    () =>
+      tasks
+        .filter((t) => !isTaskRemovedLocally(pid, t.id))
+        .map((t) => mergeTaskWithUi(pid, t)),
     [tasks, pid, uiRefresh]
   );
 
   const sprintIdsInTasks = useMemo(
-    () => [...new Set(visibleTasks.map((t) => t.sprintId).filter((x) => x != null))],
-    [visibleTasks]
+    () => [...new Set(displayTasks.map((t) => t.sprintId).filter((x) => x != null))],
+    [displayTasks]
   );
 
   const effectiveSprintId = useMemo(() => {
@@ -363,18 +384,18 @@ export default function ProjectPage() {
 
   const sprintTasks = useMemo(
     () =>
-      effectiveSprintId == null ? [] : visibleTasks.filter((t) => t.sprintId === effectiveSprintId),
-    [visibleTasks, effectiveSprintId]
+      effectiveSprintId == null ? [] : displayTasks.filter((t) => t.sprintId === effectiveSprintId),
+    [displayTasks, effectiveSprintId]
   );
 
-  const backlogTasks = useMemo(() => visibleTasks.filter((t) => t.sprintId == null), [visibleTasks]);
+  const backlogTasks = useMemo(() => displayTasks.filter((t) => t.sprintId == null), [displayTasks]);
 
   const boardByStatus = useMemo(() => {
-    const todo = visibleTasks.filter((t) => t.status === TASK_STATUS.TODO);
-    const prog = visibleTasks.filter((t) => t.status === TASK_STATUS.IN_PROGRESS);
-    const done = visibleTasks.filter((t) => t.status === TASK_STATUS.DONE);
+    const todo = displayTasks.filter((t) => t.status === TASK_STATUS.TODO);
+    const prog = displayTasks.filter((t) => t.status === TASK_STATUS.IN_PROGRESS);
+    const done = displayTasks.filter((t) => t.status === TASK_STATUS.DONE);
     return { todo, prog, done };
-  }, [visibleTasks]);
+  }, [displayTasks]);
 
   const boardSorted = useMemo(
     () => ({
