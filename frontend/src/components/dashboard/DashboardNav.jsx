@@ -3,18 +3,37 @@ import { decodeJwtPayload, displayNameFromEmail, initialsFromName } from '../../
 
 const brand = '#5d45fd';
 
+function navLinkBaseClass() {
+  return 'text-decoration-none px-2 py-1 small fw-medium';
+}
+
 export default function DashboardNav() {
   const navigate = useNavigate();
   const location = useLocation();
+
   const token = localStorage.getItem('token');
   const payload = decodeJwtPayload(token);
-  const email = payload?.email ?? '';
+
+  let email = '';
+  if (payload && typeof payload.email === 'string') {
+    email = payload.email;
+  }
+
   const displayName = displayNameFromEmail(email);
   const initials = initialsFromName(displayName);
 
   function logout() {
     localStorage.removeItem('token');
     navigate('/login', { replace: true });
+  }
+
+  function dashboardLinkClass(isActive) {
+    return `${navLinkBaseClass()} ${isActive ? 'dashboard-nav__link--active' : 'text-secondary'}`;
+  }
+
+  function projectsLinkClass(isActive) {
+    const isProjectsRoute = isActive || location.pathname.startsWith('/projects/');
+    return `${navLinkBaseClass()} ${isProjectsRoute ? 'dashboard-nav__link--active' : 'text-secondary'}`;
   }
 
   return (
@@ -34,23 +53,10 @@ export default function DashboardNav() {
               </span>
             </Link>
             <nav className="d-flex align-items-center gap-1 min-w-0">
-              <NavLink
-                to="/dashboard"
-                end
-                className={({ isActive }) =>
-                  `text-decoration-none px-2 py-1 small fw-medium ${isActive ? 'dashboard-nav__link--active' : 'text-secondary'}`
-                }
-              >
+              <NavLink to="/dashboard" end className={({ isActive }) => dashboardLinkClass(isActive)}>
                 Dashboard
               </NavLink>
-              <NavLink
-                to="/projects"
-                className={({ isActive }) =>
-                  `text-decoration-none px-2 py-1 small fw-medium ${
-                    isActive || location.pathname.startsWith('/projects/') ? 'dashboard-nav__link--active' : 'text-secondary'
-                  }`
-                }
-              >
+              <NavLink to="/projects" className={({ isActive }) => projectsLinkClass(isActive)}>
                 Projects
               </NavLink>
             </nav>
