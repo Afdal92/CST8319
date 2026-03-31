@@ -96,6 +96,99 @@ const getMyProjects = async (req, res) => {
   }
 };
 
+const updateProject = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, description } = req.body;
+
+    const project = await prisma.project.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (project.ownerUserId !== req.user.id) {
+      return res.status(403).json({ message: 'Only the project owner can update this project' });
+    }
+
+    const updatedProject = await prisma.project.update({
+      where: { id: Number(id) },
+      data: {
+        name: name ?? project.name,
+        description: description ?? project.description
+      }
+    });
+
+    res.json({
+      message: 'Project updated successfully',
+      project: updatedProject
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const addProjectMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { userId } = req.body;
+
+    if (!userId) {
+      return res.status(400).json({ message: 'userId is required' });
+    }
+
+    const project = await prisma.project.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (project.ownerUserId !== req.user.id) {
+      return res.status(403).json({ message: 'Only the project owner can add members' });
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: Number(userId) }
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    const existingMembership = await prisma.projectMember.findUnique({
+      where: {
+        userId_projectId: {
+          userId: Number(userId),
+          projectId: Number(id)
+        }
+      }
+    });
+
+    if (existingMembership) {
+      return res.status(400).json({ message: 'User is already a member of this project' });
+    }
+
+    const member = await prisma.projectMember.create({
+      data: {
+        userId: Number(userId),
+        projectId: Number(id),
+        role: 'MEMBER'
+      }
+    });
+
+    res.status(201).json({
+      message: 'Member added successfully',
+      member
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const deleteProject = async (req, res) => {
   try {
     const { id } = req.params;
@@ -138,5 +231,7 @@ module.exports = {
   createProject,
   joinProject,
   getMyProjects,
+  updateProject,
+  addProjectMember,
   deleteProject
 };
