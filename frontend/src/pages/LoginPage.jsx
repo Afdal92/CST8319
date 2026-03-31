@@ -10,24 +10,32 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
     setError('');
-    if (!email.trim() || !password) {
+
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
       setError('Please enter your email and password.');
       return;
     }
+
     setLoading(true);
     try {
-      const res = await loginRequest({ email: email.trim(), password });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const response = await loginRequest({ email: trimmedEmail, password: password });
+      const data = await response.json().catch(function () {
+        return {};
+      });
+
+      if (!response.ok) {
         setError(data.message || 'Login failed. Try again.');
         return;
       }
+
       if (data.token) {
         localStorage.setItem('token', data.token);
       }
+
       navigate('/dashboard', { replace: true });
     } catch {
       setError('Cannot connect right now. Check your connection or try again in a moment.');
@@ -90,7 +98,9 @@ export default function LoginPage() {
                 className="login-input"
                 placeholder="student@university.edu"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={function (e) {
+                  setEmail(e.target.value);
+                }}
               />
             </div>
 
@@ -112,7 +122,9 @@ export default function LoginPage() {
                 className="login-input"
                 placeholder="••••••••"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={function (e) {
+                  setPassword(e.target.value);
+                }}
               />
             </div>
 

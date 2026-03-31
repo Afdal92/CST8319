@@ -10,25 +10,34 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function handleSubmit(event) {
+    event.preventDefault();
     setError('');
-    if (!name.trim() || !email.trim() || !password) {
+
+    const trimmedName = name.trim();
+    const trimmedEmail = email.trim();
+
+    if (!trimmedName || !trimmedEmail || !password) {
       setError('Name, email, and password are required.');
       return;
     }
+
     setLoading(true);
     try {
-      const res = await registerRequest({
-        name: name.trim(),
-        email: email.trim(),
-        password,
+      const response = await registerRequest({
+        name: trimmedName,
+        email: trimmedEmail,
+        password: password,
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      const data = await response.json().catch(function () {
+        return {};
+      });
+
+      if (!response.ok) {
         setError(data.message || 'Registration failed.');
         return;
       }
+
       navigate('/login', { replace: true });
     } catch {
       setError('Cannot connect right now. Check your connection or try again in a moment.');
@@ -70,7 +79,9 @@ export default function RegisterPage() {
               className="form-control"
               placeholder="Alex Student"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={function (e) {
+                setName(e.target.value);
+              }}
             />
           </div>
 
@@ -86,7 +97,9 @@ export default function RegisterPage() {
               className="form-control"
               placeholder="student@university.edu"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={function (e) {
+                setEmail(e.target.value);
+              }}
             />
           </div>
 
@@ -102,7 +115,9 @@ export default function RegisterPage() {
               className="form-control"
               placeholder="••••••••"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={function (e) {
+                setPassword(e.target.value);
+              }}
             />
           </div>
 

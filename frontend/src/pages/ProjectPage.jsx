@@ -30,6 +30,8 @@ import './ProjectPage.css';
 
 const PRI_ORDER = { HIGH: 0, MEDIUM: 1, LOW: 2 };
 
+// --- Small helpers (pure functions; easier to test and read) ---
+
 function statusLabel(status) {
   if (status === TASK_STATUS.DONE) return 'Done';
   if (status === TASK_STATUS.IN_PROGRESS) return 'In progress';
@@ -75,14 +77,18 @@ function priorityLabel(level) {
   return 'Medium';
 }
 
+function priorityPillClassName(level) {
+  if (level === TASK_PRIORITY.HIGH) {
+    return 'priority-pill priority-pill--high';
+  }
+  if (level === TASK_PRIORITY.LOW) {
+    return 'priority-pill priority-pill--low';
+  }
+  return 'priority-pill priority-pill--med';
+}
+
 function PriorityPill({ level }) {
-  const cls =
-    level === TASK_PRIORITY.HIGH
-      ? 'priority-pill priority-pill--high'
-      : level === TASK_PRIORITY.LOW
-        ? 'priority-pill priority-pill--low'
-        : 'priority-pill priority-pill--med';
-  return <span className={cls}>{priorityLabel(level)}</span>;
+  return <span className={priorityPillClassName(level)}>{priorityLabel(level)}</span>;
 }
 
 function assigneeInitial(task) {
@@ -270,7 +276,7 @@ export default function ProjectPage() {
   const [addSprintId, setAddSprintId] = useState(null);
   const [addError, setAddError] = useState('');
   const [addSaving, setAddSaving] = useState(false);
-  /** When set, the task modal is editing this task id instead of creating. */
+  // when set, the task modal is editing this task id instead of creating
   const [editTaskId, setEditTaskId] = useState(null);
 
   const [sprintModal, setSprintModal] = useState(false);
@@ -281,7 +287,7 @@ export default function ProjectPage() {
   const [sprintSaving, setSprintSaving] = useState(false);
 
   const [focusSprintId, setFocusSprintId] = useState(null);
-  /** Bumps when local-only UI prefs (priority, sprint labels) change so board re-sorts / re-renders. */
+  // bumps when local-only ui prefs change so board re-sorts and re-renders
   const [uiRefresh, setUiRefresh] = useState(0);
   const [addPriority, setAddPriority] = useState(TASK_PRIORITY.MEDIUM);
 
@@ -329,7 +335,7 @@ export default function ProjectPage() {
     loadData();
   }, [loadData]);
 
-  /** Server tasks minus locally hidden rows, merged with per-device title/description/sprint overrides. */
+  // server tasks minus locally hidden rows, merged with local title/description/sprint overrides
   const displayTasks = useMemo(
     () =>
       tasks
@@ -338,25 +344,48 @@ export default function ProjectPage() {
     [tasks, pid, uiRefresh]
   );
 
-  const sprintIdsInTasks = useMemo(
-    () => [...new Set(displayTasks.map((t) => t.sprintId).filter((x) => x != null))],
-    [displayTasks]
-  );
+  const sprintIdsInTasks = useMemo(function () {
+    const ids = [];
+    for (let i = 0; i < displayTasks.length; i++) {
+      const sprintId = displayTasks[i].sprintId;
+      if (sprintId == null) {
+        continue;
+      }
+      const asNumber = Number(sprintId);
+      if (ids.indexOf(asNumber) === -1) {
+        ids.push(asNumber);
+      }
+    }
+    return ids;
+  }, [displayTasks]);
 
-  const effectiveSprintId = useMemo(() => {
-    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) return focusSprintId;
-    if (sprintIdsInTasks.length === 0) return null;
-    return Math.max(...sprintIdsInTasks);
+  const effectiveSprintId = useMemo(function () {
+    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) {
+      return focusSprintId;
+    }
+    if (sprintIdsInTasks.length === 0) {
+      return null;
+    }
+    return Math.max.apply(null, sprintIdsInTasks);
   }, [focusSprintId, sprintIdsInTasks, pid, uiRefresh]);
 
-  const sprintOptions = useMemo(() => {
-    const s = new Set(sprintIdsInTasks);
-    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) {
-      s.add(focusSprintId);
+  const sprintOptions = useMemo(function () {
+    const ids = [];
+    for (let i = 0; i < sprintIdsInTasks.length; i++) {
+      ids.push(sprintIdsInTasks[i]);
     }
-    return [...s]
-      .filter((id) => !isSprintRemovedLocally(pid, id))
-      .sort((a, b) => a - b);
+    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) {
+      if (ids.indexOf(focusSprintId) === -1) {
+        ids.push(focusSprintId);
+      }
+    }
+    const filtered = ids.filter(function (id) {
+      return !isSprintRemovedLocally(pid, id);
+    });
+    filtered.sort(function (a, b) {
+      return a - b;
+    });
+    return filtered;
   }, [sprintIdsInTasks, focusSprintId, pid, uiRefresh]);
 
   const assignableSprints = useMemo(
@@ -369,15 +398,24 @@ export default function ProjectPage() {
     [pid, sprintIdsInTasks, focusSprintId, uiRefresh]
   );
 
-  /** Options in the new-task modal; includes pre-selected sprint id even if list was rebuilt. */
-  const sprintChoicesForModal = useMemo(() => {
-    const base = [...assignableSprints];
-    const ids = new Set(base.map((s) => s.id));
-    if (addSprintId != null && !ids.has(Number(addSprintId))) {
+  // options in the new-task modal; keeps pre-selected sprint if the list changes
+  const sprintChoicesForModal = useMemo(function () {
+    const base = assignableSprints.slice();
+    const idSet = new Set();
+    for (let i = 0; i < base.length; i++) {
+      idSet.add(base[i].id);
+    }
+    if (addSprintId != null && !idSet.has(Number(addSprintId))) {
       const sid = Number(addSprintId);
       const meta = getSprintRecord(sid);
-      base.push({ id: sid, name: meta?.name ?? null });
-      base.sort((a, b) => a.id - b.id);
+      let name = null;
+      if (meta && meta.name != null) {
+        name = meta.name;
+      }
+      base.push({ id: sid, name: name });
+      base.sort(function (a, b) {
+        return a.id - b.id;
+      });
     }
     return base;
   }, [assignableSprints, addSprintId]);
@@ -459,7 +497,7 @@ export default function ProjectPage() {
     }
   }
 
-  /** @param {{ status?: string; sprintId?: number | null }} opts */
+  // `opts` can include `status` and `sprintId`
   function openAddTask(opts = {}) {
     const { status, sprintId } = opts;
     setAddStatus(status ?? TASK_STATUS.TODO);
@@ -508,7 +546,10 @@ export default function ProjectPage() {
         setAddError(body.message || 'Could not create task.');
         return;
       }
-      const newId = body.task?.id;
+      let newId = null;
+      if (body.task && body.task.id != null) {
+        newId = body.task.id;
+      }
       if (newId != null && addStatus !== TASK_STATUS.TODO) {
         const r2 = await updateTaskStatusRequest(newId, addStatus);
         if (!r2.ok) {
@@ -550,7 +591,7 @@ export default function ProjectPage() {
         setSprintError(body.message || 'Could not create sprint.');
         return;
       }
-      if (body.sprint?.id != null) {
+      if (body.sprint && body.sprint.id != null) {
         saveSprintRecord(body.sprint.id, {
           name: sprintName.trim(),
           startDate: sprintStart,
@@ -701,7 +742,9 @@ export default function ProjectPage() {
                       {effectiveSprintId != null ? (
                         <>
                           <span className="fw-bold" style={{ color: '#0f172a' }}>
-                            {focusedSprintMeta?.name ?? `Sprint #${effectiveSprintId}`}
+                            {focusedSprintMeta && focusedSprintMeta.name
+                              ? focusedSprintMeta.name
+                              : 'Sprint #' + effectiveSprintId}
                           </span>
                           <span className="badge bg-light text-secondary border">Sprint #{effectiveSprintId}</span>
                           {focusedSprintMeta ? (
@@ -761,7 +804,7 @@ export default function ProjectPage() {
                               const m = getSprintRecord(sid);
                               return (
                                 <option key={sid} value={sid}>
-                                  {m?.name ? `${m.name} (#${sid})` : `Sprint #${sid}`}
+                                  {m && m.name ? m.name + ' (#' + sid + ')' : 'Sprint #' + sid}
                                 </option>
                               );
                             })}

@@ -11,69 +11,97 @@ import {
 } from '../api/index.js';
 import './DashboardPage.css';
 
-function startOfWeekMonday(d) {
-  const x = new Date(d);
-  const day = x.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  x.setDate(x.getDate() + diff);
-  x.setHours(0, 0, 0, 0);
-  return x;
+// helpers for dates and task lists (used only on this page)
+
+function startOfWeekMonday(dateInput) {
+  const date = new Date(dateInput);
+  const dayOfWeek = date.getDay();
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+  date.setDate(date.getDate() + daysToMonday);
+  date.setHours(0, 0, 0, 0);
+  return date;
 }
 
-function endOfWeekFriday(d) {
-  const s = startOfWeekMonday(d);
-  const e = new Date(s);
-  e.setDate(s.getDate() + 4);
-  e.setHours(23, 59, 59, 999);
-  return e;
+function endOfWeekFriday(dateInput) {
+  const weekStart = startOfWeekMonday(dateInput);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 4);
+  weekEnd.setHours(23, 59, 59, 999);
+  return weekEnd;
 }
 
 function weekdayDoneCounts(tasks) {
   const counts = [0, 0, 0, 0, 0];
   const now = new Date();
-  const start = startOfWeekMonday(now);
-  const end = endOfWeekFriday(now);
-  for (const t of tasks) {
-    if (t.status !== TASK_STATUS.DONE) continue;
-    const d = new Date(t.updatedAt);
-    if (d < start || d > end) continue;
-    const wd = d.getDay();
-    if (wd < 1 || wd > 5) continue;
-    counts[wd - 1]++;
+  const weekStart = startOfWeekMonday(now);
+  const weekEnd = endOfWeekFriday(now);
+
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i];
+    if (task.status !== TASK_STATUS.DONE) {
+      continue;
+    }
+    const updated = new Date(task.updatedAt);
+    if (updated < weekStart || updated > weekEnd) {
+      continue;
+    }
+    const weekday = updated.getDay();
+    if (weekday < 1 || weekday > 5) {
+      continue;
+    }
+    counts[weekday - 1] = counts[weekday - 1] + 1;
   }
   return counts;
 }
 
 function uniqueSprintCount(tasks) {
-  const s = new Set();
-  for (const t of tasks) {
-    if (t.sprintId != null) s.add(t.sprintId);
+  const seen = new Set();
+  for (let i = 0; i < tasks.length; i++) {
+    const sprintId = tasks[i].sprintId;
+    if (sprintId != null) {
+      seen.add(sprintId);
+    }
   }
-  return s.size;
+  return seen.size;
 }
 
 function nearestOpenDueDays(tasks) {
   const open = tasks.filter((t) => t.status !== TASK_STATUS.DONE && t.dueDate);
-  if (open.length === 0) return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  let best = null;
-  for (const t of open) {
-    const due = new Date(t.dueDate);
-    due.setHours(0, 0, 0, 0);
-    const diff = Math.ceil((due - now) / (1000 * 60 * 60 * 24));
-    if (best === null || diff < best) best = diff;
+  if (open.length === 0) {
+    return null;
   }
-  return best;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  let smallestDiffDays = null;
+
+  for (let i = 0; i < open.length; i++) {
+    const due = new Date(open[i].dueDate);
+    due.setHours(0, 0, 0, 0);
+    const diffMs = due - today;
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    if (smallestDiffDays === null || diffDays < smallestDiffDays) {
+      smallestDiffDays = diffDays;
+    }
+  }
+  return smallestDiffDays;
 }
 
 function nearestDueDateForProject(tasks) {
   const open = tasks.filter((t) => t.status !== TASK_STATUS.DONE && t.dueDate);
-  if (open.length === 0) return null;
-  return open.reduce((a, t) => {
-    const d = new Date(t.dueDate).getTime();
-    return !a || d < new Date(a).getTime() ? t.dueDate : a;
-  }, null);
+  if (open.length === 0) {
+    return null;
+  }
+  let earliestDue = null;
+  let earliestTimeMs = null;
+  for (let i = 0; i < open.length; i++) {
+    const dueString = open[i].dueDate;
+    const timeMs = new Date(dueString).getTime();
+    if (earliestTimeMs === null || timeMs < earliestTimeMs) {
+      earliestTimeMs = timeMs;
+      earliestDue = dueString;
+    }
+  }
+  return earliestDue;
 }
 
 function StatCard({ icon, badge, value, label, iconBg }) {
@@ -115,7 +143,11 @@ export default function DashboardPage() {
     }
     const data = await res.json().catch(() => null);
     if (!res.ok) {
-      setLoadError(typeof data?.message === 'string' ? data.message : 'Could not load dashboard.');
+      let message = 'Could not load dashboard.';
+      if (data && typeof data.message === 'string') {
+        message = data.message;
+      }
+      setLoadError(message);
       setProjects([]);
       setTasksByProject({});
       return;
@@ -179,8 +211,8 @@ export default function DashboardPage() {
       setNewName('');
       setNewDescription('');
       await loadData();
-      if (body.project?.id != null) {
-        navigate(`/projects/${body.project.id}`, { replace: true });
+      if (body.project && body.project.id != null) {
+        navigate('/projects/' + body.project.id, { replace: true });
       }
     } catch {
       setCreateError('Network error.');
