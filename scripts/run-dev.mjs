@@ -1,58 +1,81 @@
-/**
- * Run frontend and backend dev servers together (Windows, macOS, Linux).
- * From repo root: node scripts/run-dev.mjs
- */
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const root = path.resolve(__dirname, '..');
+// this script starts frontend and backend dev servers together
+// run it from repo root with: node scripts/run-dev.mjs
 
-const children = [];
-let shuttingDown = false;
+const currentFilePath = fileURLToPath(import.meta.url);
+const scriptsFolder = path.dirname(currentFilePath);
+const projectRootFolder = path.resolve(scriptsFolder, '..');
 
-function shutdown(code = 0) {
-  if (shuttingDown) return;
-  shuttingDown = true;
-  for (const c of children) {
-    if (c.exitCode === null && !c.killed) {
+const runningProcesses = [];
+let isShuttingDown = false;
+
+function stopAllProcesses(exitCode) {
+  if (isShuttingDown) {
+    return;
+  }
+
+  isShuttingDown = true;
+
+  for (let i = 0; i < runningProcesses.length; i++) {
+    const processItem = runningProcesses[i];
+    const stillRunning = processItem.exitCode === null && !processItem.killed;
+
+    if (stillRunning) {
       try {
-        c.kill('SIGTERM');
+        processItem.kill('SIGTERM');
       } catch {
-        c.kill();
+        processItem.kill();
       }
     }
   }
-  setTimeout(() => process.exit(code), 500).unref();
+
+  setTimeout(function () {
+    process.exit(exitCode);
+  }, 500).unref();
 }
 
-function start(subdir) {
-  const cwd = path.join(root, subdir);
-  const child = spawn('npm run dev', {
-    cwd,
+function startDevServer(folderName) {
+  const folderPath = path.join(projectRootFolder, folderName);
+
+  const childProcess = spawn('npm run dev', {
+    cwd: folderPath,
     stdio: 'inherit',
     env: process.env,
     shell: true,
     windowsHide: true,
   });
-  children.push(child);
-  child.on('exit', (code, signal) => {
-    if (shuttingDown) return;
-    if (signal) {
-      shutdown(0);
+
+  runningProcesses.push(childProcess);
+
+  childProcess.on('exit', function (code, signal) {
+    if (isShuttingDown) {
       return;
     }
-    shutdown(code ?? 1);
+
+    if (signal) {
+      stopAllProcesses(0);
+      return;
+    }
+
+    if (code === null || code === undefined) {
+      stopAllProcesses(1);
+      return;
+    }
+
+    stopAllProcesses(code);
   });
-  return child;
 }
 
-start('frontend');
-start('backend');
+startDevServer('frontend');
+startDevServer('backend');
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => {
-    shutdown(0);
-  });
-}
+process.on('SIGINT', function () {
+  stopAllProcesses(0);
+});
+
+process.on('SIGTERM', function () {
+  stopAllProcesses(0);
+});
