@@ -1,36 +1,49 @@
 import { TASK_PRIORITY, TASK_PRIORITY_LIST } from '../api/schemaReference.js';
 
+// all of this is saved in the browser only (localStorage). It fills gaps where the API
+// does not save sprints, priorities, or task text the way the UI needs
+
 const STORAGE_KEY = 'csh_project_ui_v1';
+
+function defaultRoot() {
+  return {
+    sprints: {},
+    priorities: {},
+    removedTasks: {},
+    removedSprints: {},
+    taskOverrides: {},
+  };
+}
 
 function readRoot() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      return {
-        sprints: {},
-        priorities: {},
-        removedTasks: {},
-        removedSprints: {},
-        taskOverrides: {},
-      };
+      return defaultRoot();
     }
-    const p = JSON.parse(raw);
-    return {
-      sprints: typeof p.sprints === 'object' && p.sprints ? p.sprints : {},
-      priorities: typeof p.priorities === 'object' && p.priorities ? p.priorities : {},
-      removedTasks: typeof p.removedTasks === 'object' && p.removedTasks ? p.removedTasks : {},
-      removedSprints: typeof p.removedSprints === 'object' && p.removedSprints ? p.removedSprints : {},
-      taskOverrides:
-        typeof p.taskOverrides === 'object' && p.taskOverrides ? p.taskOverrides : {},
-    };
+
+    const parsed = JSON.parse(raw);
+    const root = defaultRoot();
+
+    if (typeof parsed.sprints === 'object' && parsed.sprints !== null) {
+      root.sprints = parsed.sprints;
+    }
+    if (typeof parsed.priorities === 'object' && parsed.priorities !== null) {
+      root.priorities = parsed.priorities;
+    }
+    if (typeof parsed.removedTasks === 'object' && parsed.removedTasks !== null) {
+      root.removedTasks = parsed.removedTasks;
+    }
+    if (typeof parsed.removedSprints === 'object' && parsed.removedSprints !== null) {
+      root.removedSprints = parsed.removedSprints;
+    }
+    if (typeof parsed.taskOverrides === 'object' && parsed.taskOverrides !== null) {
+      root.taskOverrides = parsed.taskOverrides;
+    }
+
+    return root;
   } catch {
-    return {
-      sprints: {},
-      priorities: {},
-      removedTasks: {},
-      removedSprints: {},
-      taskOverrides: {},
-    };
+    return defaultRoot();
   }
 }
 
@@ -38,14 +51,18 @@ function writeRoot(root) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(root));
 }
 
-/**
- * Cache for Sprint rows created in this app (backend has no GET /sprints).
- * Maps Sprint.id → { name, startDate, endDate, projectId } aligned with prisma `Sprint`.
- */
+// --- Sprints we created here (no GET /sprints on the server) ---
+
 export function getSprintRecord(sprintId) {
-  if (sprintId == null) return null;
+  if (sprintId == null) {
+    return null;
+  }
   const root = readRoot();
-  return root.sprints[String(sprintId)] ?? null;
+  const key = String(sprintId);
+  if (root.sprints[key] === undefined) {
+    return null;
+  }
+  return root.sprints[key];
 }
 
 export function saveSprintRecord(sprintId, { name, startDate, endDate, projectId }) {
@@ -59,163 +76,300 @@ export function saveSprintRecord(sprintId, { name, startDate, endDate, projectId
   writeRoot(root);
 }
 
+// --- Task priority (stored per device) ---
+
 export function getTaskPriority(projectId, taskId) {
-  const v = readRoot().priorities[String(projectId)]?.[String(taskId)];
-  if (TASK_PRIORITY_LIST.includes(v)) return v;
+  const root = readRoot();
+  const projectKey = String(projectId);
+  const taskKey = String(taskId);
+
+  const stored = root.priorities[projectKey];
+  if (!stored || stored[taskKey] === undefined) {
+    return TASK_PRIORITY.MEDIUM;
+  }
+
+  const value = stored[taskKey];
+  if (TASK_PRIORITY_LIST.includes(value)) {
+    return value;
+  }
   return TASK_PRIORITY.MEDIUM;
 }
 
 export function saveTaskPriority(projectId, taskId, priority) {
-  if (!TASK_PRIORITY_LIST.includes(priority)) return;
+  if (!TASK_PRIORITY_LIST.includes(priority)) {
+    return;
+  }
+
   const root = readRoot();
-  if (!root.priorities[String(projectId)]) root.priorities[String(projectId)] = {};
-  root.priorities[String(projectId)][String(taskId)] = priority;
+  const projectKey = String(projectId);
+  const taskKey = String(taskId);
+
+  if (!root.priorities[projectKey]) {
+    root.priorities[projectKey] = {};
+  }
+  root.priorities[projectKey][taskKey] = priority;
   writeRoot(root);
 }
 
-/**
- * Merge server task row with per-device edits (title / description / sprintId).
- * Backend has no PATCH for these fields; overrides match how priority is stored.
- */
+// --- Edits to title / description / sprint when the server does not PATCH them ---
+
 export function mergeTaskWithUi(projectId, task) {
-  const o = readRoot().taskOverrides[String(projectId)]?.[String(task.id)] ?? {};
-  return {
-    ...task,
-    ...(typeof o.title === 'string' ? { title: o.title } : {}),
-    ...(o.description !== undefined ? { description: o.description } : {}),
-    ...(o.sprintId !== undefined ? { sprintId: o.sprintId } : {}),
-  };
-}
-
-function normDescription(d) {
-  if (d == null || d === '') return null;
-  return String(d);
-}
-
-/**
- * Persist title, description, sprintId overrides vs server task. Omits keys that match server.
- */
-export function persistTaskEdit(projectId, serverTask, { title, description, sprintId }) {
-  const pk = String(projectId);
-  const tk = String(serverTask.id);
   const root = readRoot();
-  if (!root.taskOverrides[pk]) root.taskOverrides[pk] = {};
+  const projectKey = String(projectId);
+  const taskKey = String(task.id);
 
-  const next = { ...(root.taskOverrides[pk][tk] || {}) };
-  const trimmedTitle = title.trim();
-  if (trimmedTitle === serverTask.title) delete next.title;
-  else next.title = trimmedTitle;
-
-  const sd = normDescription(serverTask.description);
-  const fd = normDescription(description);
-  if (fd === sd) delete next.description;
-  else next.description = fd;
-
-  const ss = serverTask.sprintId == null ? null : Number(serverTask.sprintId);
-  const fs = sprintId == null || !Number.isFinite(Number(sprintId)) ? null : Number(sprintId);
-  if (fs === ss) delete next.sprintId;
-  else next.sprintId = fs;
-
-  if (Object.keys(next).length === 0) {
-    delete root.taskOverrides[pk][tk];
-    if (Object.keys(root.taskOverrides[pk]).length === 0) delete root.taskOverrides[pk];
-  } else {
-    root.taskOverrides[pk][tk] = next;
+  let overrides = {};
+  if (root.taskOverrides[projectKey] && root.taskOverrides[projectKey][taskKey]) {
+    overrides = root.taskOverrides[projectKey][taskKey];
   }
+
+  const merged = { ...task };
+
+  if (typeof overrides.title === 'string') {
+    merged.title = overrides.title;
+  }
+  if (overrides.description !== undefined) {
+    merged.description = overrides.description;
+  }
+  if (overrides.sprintId !== undefined) {
+    merged.sprintId = overrides.sprintId;
+  }
+
+  return merged;
+}
+
+function normalizeDescription(value) {
+  if (value == null || value === '') {
+    return null;
+  }
+  return String(value);
+}
+
+export function persistTaskEdit(projectId, serverTask, { title, description, sprintId }) {
+  const projectKey = String(projectId);
+  const taskKey = String(serverTask.id);
+  const root = readRoot();
+
+  if (!root.taskOverrides[projectKey]) {
+    root.taskOverrides[projectKey] = {};
+  }
+
+  const before = root.taskOverrides[projectKey][taskKey] || {};
+  const next = { ...before };
+
+  const trimmedTitle = title.trim();
+  if (trimmedTitle === serverTask.title) {
+    delete next.title;
+  } else {
+    next.title = trimmedTitle;
+  }
+
+  const serverDesc = normalizeDescription(serverTask.description);
+  const formDesc = normalizeDescription(description);
+  if (formDesc === serverDesc) {
+    delete next.description;
+  } else {
+    next.description = formDesc;
+  }
+
+  let serverSprint = serverTask.sprintId == null ? null : Number(serverTask.sprintId);
+  let formSprint =
+    sprintId == null || !Number.isFinite(Number(sprintId)) ? null : Number(sprintId);
+
+  if (formSprint === serverSprint) {
+    delete next.sprintId;
+  } else {
+    next.sprintId = formSprint;
+  }
+
+  const keysLeft = Object.keys(next);
+  if (keysLeft.length === 0) {
+    delete root.taskOverrides[projectKey][taskKey];
+    const projectOverrides = root.taskOverrides[projectKey];
+    if (Object.keys(projectOverrides).length === 0) {
+      delete root.taskOverrides[projectKey];
+    }
+  } else {
+    root.taskOverrides[projectKey][taskKey] = next;
+  }
+
   writeRoot(root);
 }
 
 export function clearTaskUiOverrides(projectId, taskId) {
   const root = readRoot();
-  const pk = String(projectId);
-  const tk = String(taskId);
-  if (root.taskOverrides[pk]?.[tk]) {
-    delete root.taskOverrides[pk][tk];
-    if (Object.keys(root.taskOverrides[pk]).length === 0) delete root.taskOverrides[pk];
-    writeRoot(root);
+  const projectKey = String(projectId);
+  const taskKey = String(taskId);
+
+  if (!root.taskOverrides[projectKey] || !root.taskOverrides[projectKey][taskKey]) {
+    return;
   }
+
+  delete root.taskOverrides[projectKey][taskKey];
+  if (Object.keys(root.taskOverrides[projectKey]).length === 0) {
+    delete root.taskOverrides[projectKey];
+  }
+  writeRoot(root);
 }
 
 export function formatSprintDateRange(startDate, endDate) {
-  if (!startDate || !endDate) return '';
+  if (!startDate || !endDate) {
+    return '';
+  }
   try {
-    const a = new Date(startDate);
-    const b = new Date(endDate);
-    const o = { month: 'short', day: 'numeric', year: 'numeric' };
-    return `${a.toLocaleDateString(undefined, o)} – ${b.toLocaleDateString(undefined, o)}`;
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const options = { month: 'short', day: 'numeric', year: 'numeric' };
+    const a = start.toLocaleDateString(undefined, options);
+    const b = end.toLocaleDateString(undefined, options);
+    return a + ' – ' + b;
   } catch {
     return '';
   }
 }
 
-/**
- * Sprints the user can assign a new task to (Sprint.id), for this Project.id.
- * Union of: Sprint ids already on tasks, cached sprints for this project, and any extra ids (e.g. focused sprint).
- */
+// --- Hide tasks/sprints only in this browser ---
+
 export function isTaskRemovedLocally(projectId, taskId) {
-  const list = readRoot().removedTasks[String(projectId)] ?? [];
+  const root = readRoot();
+  const projectKey = String(projectId);
+  const list = root.removedTasks[projectKey];
+  if (!list) {
+    return false;
+  }
   return list.includes(String(taskId));
 }
 
 export function isSprintRemovedLocally(projectId, sprintId) {
-  const list = readRoot().removedSprints[String(projectId)] ?? [];
+  const root = readRoot();
+  const projectKey = String(projectId);
+  const list = root.removedSprints[projectKey];
+  if (!list) {
+    return false;
+  }
   return list.includes(String(sprintId));
 }
 
-/**
- * Hide a task in this browser only (no DELETE /api/tasks). Strips cached priority for that task.
- */
 export function removeTaskLocally(projectId, taskId) {
   const root = readRoot();
-  const pk = String(projectId);
-  const tk = String(taskId);
-  if (!root.removedTasks[pk]) root.removedTasks[pk] = [];
-  if (!root.removedTasks[pk].includes(tk)) root.removedTasks[pk].push(tk);
-  if (root.priorities[pk]) delete root.priorities[pk][tk];
-  if (root.taskOverrides[pk]) delete root.taskOverrides[pk][tk];
+  const projectKey = String(projectId);
+  const taskKey = String(taskId);
+
+  if (!root.removedTasks[projectKey]) {
+    root.removedTasks[projectKey] = [];
+  }
+  if (!root.removedTasks[projectKey].includes(taskKey)) {
+    root.removedTasks[projectKey].push(taskKey);
+  }
+
+  if (root.priorities[projectKey]) {
+    delete root.priorities[projectKey][taskKey];
+  }
+  if (root.taskOverrides[projectKey]) {
+    delete root.taskOverrides[projectKey][taskKey];
+  }
+
   writeRoot(root);
 }
 
-/**
- * Hide a sprint and all given task ids in this browser only (no DELETE API).
- * Drops cached sprint metadata so it disappears from pickers.
- */
 export function removeSprintLocally(projectId, sprintId, taskIdsInSprint = []) {
   const root = readRoot();
-  const pk = String(projectId);
-  const sk = String(sprintId);
-  if (!root.removedSprints[pk]) root.removedSprints[pk] = [];
-  if (!root.removedSprints[pk].includes(sk)) root.removedSprints[pk].push(sk);
-  delete root.sprints[sk];
-  if (!root.removedTasks[pk]) root.removedTasks[pk] = [];
-  const rt = root.removedTasks[pk];
-  for (const tid of taskIdsInSprint) {
-    const tk = String(tid);
-    if (!rt.includes(tk)) rt.push(tk);
-    if (root.priorities[pk]) delete root.priorities[pk][tk];
-    if (root.taskOverrides[pk]) delete root.taskOverrides[pk][tk];
+  const projectKey = String(projectId);
+  const sprintKey = String(sprintId);
+
+  if (!root.removedSprints[projectKey]) {
+    root.removedSprints[projectKey] = [];
   }
+  if (!root.removedSprints[projectKey].includes(sprintKey)) {
+    root.removedSprints[projectKey].push(sprintKey);
+  }
+
+  delete root.sprints[sprintKey];
+
+  if (!root.removedTasks[projectKey]) {
+    root.removedTasks[projectKey] = [];
+  }
+  const removedTaskIds = root.removedTasks[projectKey];
+
+  for (let i = 0; i < taskIdsInSprint.length; i++) {
+    const tid = String(taskIdsInSprint[i]);
+    if (!removedTaskIds.includes(tid)) {
+      removedTaskIds.push(tid);
+    }
+    if (root.priorities[projectKey]) {
+      delete root.priorities[projectKey][tid];
+    }
+    if (root.taskOverrides[projectKey]) {
+      delete root.taskOverrides[projectKey][tid];
+    }
+  }
+
   writeRoot(root);
+}
+
+// true = this id is a real number and not in the "removed locally" list
+function shouldIncludeSprintId(id, removedStrings) {
+  if (id == null || !Number.isFinite(Number(id))) {
+    return false;
+  }
+  const asString = String(id);
+  for (let i = 0; i < removedStrings.length; i++) {
+    if (removedStrings[i] === asString) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function listSprintsForAssignment(projectId, sprintIdsFromTasks = [], extraSprintIds = []) {
   const root = readRoot();
-  const removedS = new Set(root.removedSprints[String(projectId)] ?? []);
-  const ids = new Set(
-    [...sprintIdsFromTasks, ...extraSprintIds]
-      .filter((x) => x != null && Number.isFinite(Number(x)) && !removedS.has(String(x)))
-      .map(Number)
-  );
-  for (const [sid, meta] of Object.entries(root.sprints || {})) {
-    if (removedS.has(String(sid))) continue;
-    if (Number(meta?.projectId) === Number(projectId)) {
-      ids.add(Number(sid));
+  const projectKey = String(projectId);
+  const removedList = root.removedSprints[projectKey] || [];
+
+  const idNumbers = [];
+
+  function addNumber(n) {
+    if (!shouldIncludeSprintId(n, removedList)) {
+      return;
+    }
+    const num = Number(n);
+    if (!idNumbers.includes(num)) {
+      idNumbers.push(num);
     }
   }
-  return [...ids]
-    .sort((a, b) => a - b)
-    .map((id) => {
-      const meta = getSprintRecord(id);
-      return { id, name: meta?.name ?? null };
+
+  for (let i = 0; i < sprintIdsFromTasks.length; i++) {
+    addNumber(sprintIdsFromTasks[i]);
+  }
+  for (let j = 0; j < extraSprintIds.length; j++) {
+    addNumber(extraSprintIds[j]);
+  }
+
+  const sprintEntries = Object.entries(root.sprints || {});
+  for (let k = 0; k < sprintEntries.length; k++) {
+    const sid = sprintEntries[k][0];
+    const meta = sprintEntries[k][1];
+    if (removedList.includes(String(sid))) {
+      continue;
+    }
+    if (Number(meta && meta.projectId) === Number(projectId)) {
+      addNumber(sid);
+    }
+  }
+
+  idNumbers.sort(function (a, b) {
+    return a - b;
+  });
+
+  const result = [];
+  for (let m = 0; m < idNumbers.length; m++) {
+    const id = idNumbers[m];
+    const meta = getSprintRecord(id);
+    result.push({
+      id,
+      name: meta && meta.name != null ? meta.name : null,
     });
+  }
+
+  return result;
 }
