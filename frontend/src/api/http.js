@@ -6,31 +6,45 @@ function getStoredToken() {
   return localStorage.getItem('token');
 }
 
-/**
- * @param {string} path - e.g. `/api/projects/my` (leading slash, no base — base is prepended)
- * @param {RequestInit & { json?: unknown; auth?: boolean }} [options]
- */
-export async function apiFetch(path, options = {}) {
-  const { json: body, auth = false, headers: initHeaders, ...rest } = options;
+// basic wrapper around fetch for our API
+// - `path` should start with `/api/...`
+// - `options.json` is sent as a JSON body
+// - `options.auth` adds the token header from localStorage
+export async function apiFetch(path, options) {
+  const safeOptions = options || {};
 
-  const headers = new Headers(initHeaders || {});
-  if (body !== undefined) {
+  const bodyJson = safeOptions.json;
+  const needsAuth = safeOptions.auth === true;
+
+  const headers = new Headers(safeOptions.headers || {});
+
+  if (bodyJson !== undefined) {
     headers.set('Content-Type', 'application/json');
   }
-  if (auth) {
+
+  if (needsAuth) {
     const token = getStoredToken();
     if (token) {
-      headers.set(AUTH_HEADER, `Bearer ${token}`);
+      headers.set(AUTH_HEADER, 'Bearer ' + token);
     }
   }
 
-  const res = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : rest.body,
-  });
+  const requestInit = {
+    method: safeOptions.method || 'GET',
+    headers: headers,
+  };
 
-  return res;
+  if (bodyJson !== undefined) {
+    requestInit.body = JSON.stringify(bodyJson);
+  }
+
+  // if caller passed a raw body, allow it (used rarely)
+  if (bodyJson === undefined && safeOptions.body !== undefined) {
+    requestInit.body = safeOptions.body;
+  }
+
+  const response = await fetch(API_BASE + path, requestInit);
+  return response;
 }
 
 export { API_BASE };

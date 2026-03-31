@@ -1,17 +1,7 @@
 import { apiFetch } from './http.js';
 import { TASK_STATUS_LIST } from './schemaReference.js';
 
-/**
- * Task table fields accepted on create (see `taskController.createTask`).
- * @param {{
- *   title: string;
- *   description?: string | null;
- *   projectId: number;
- *   sprintId?: number | null;
- *   assignedToId?: number | null;
- *   dueDate?: string | null;
- * }} payload
- */
+// create a new task in a project
 export async function createTaskRequest(payload) {
   return apiFetch('/api/tasks', {
     method: 'POST',
@@ -27,25 +17,22 @@ export async function createTaskRequest(payload) {
   });
 }
 
-/**
- * Updates Task.status only. Must be one of TASK_STATUS_* (schemaReference / backend allow-list).
- * @param {number} taskId - Task.id
- * @param {string} status - TASK_STATUS.TODO | TASK_STATUS.IN_PROGRESS | TASK_STATUS.DONE
- */
+// change only the status of a task (TODO / IN_PROGRESS / DONE)
 export async function updateTaskStatusRequest(taskId, status) {
   if (!TASK_STATUS_LIST.includes(status)) {
-    throw new Error(`Invalid task status: ${status}`);
+    throw new Error('Invalid task status: ' + status);
   }
-  return apiFetch(`/api/tasks/${taskId}/status`, {
+
+  return apiFetch('/api/tasks/' + taskId + '/status', {
     method: 'PATCH',
     auth: true,
-    json: { status },
+    json: { status: status },
   });
 }
 
-/** @param {number} projectId - Project.id */
+// get all tasks for a single project
 export async function getProjectTasksRequest(projectId) {
-  return apiFetch(`/api/tasks/project/${projectId}`, {
+  return apiFetch('/api/tasks/project/' + projectId, {
     method: 'GET',
     auth: true,
   });

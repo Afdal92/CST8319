@@ -1,9 +1,6 @@
 import { apiFetch } from './http.js';
 
-/**
- * Sprint table: name, startDate, endDate, projectId (ISO strings or dates accepted by `new Date()`).
- * @param {{ name: string; startDate: string; endDate: string; projectId: number }} payload
- */
+// create a sprint (time box) for a project
 export async function createSprintRequest(payload) {
   return apiFetch('/api/sprints', {
     method: 'POST',

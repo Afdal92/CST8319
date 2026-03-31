@@ -1,9 +1,7 @@
 import { apiFetch } from './http.js';
 
-/**
- * User table fields sent to API: email, password (plain — server hashes to passwordHash).
- * @param {{ email: string; password: string }} payload
- */
+// log a user in with email and password
+// the server returns a token if it is successful
 export async function loginRequest(payload) {
   return apiFetch('/api/auth/login', {
     method: 'POST',
@@ -14,10 +12,7 @@ export async function loginRequest(payload) {
   });
 }
 
-/**
- * User table: name, email, password (plain). Server creates passwordHash.
- * @param {{ name: string; email: string; password: string }} payload
- */
+// create a new user account
 export async function registerRequest(payload) {
   return apiFetch('/api/auth/register', {
     method: 'POST',
