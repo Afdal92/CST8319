@@ -26,6 +26,38 @@ const createSprint = async (req, res) => {
   }
 };
 
+const getSprintCompletion = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const sprint = await prisma.sprint.findUnique({
+      where: { id: Number(id) },
+      include: {
+        tasks: true
+      }
+    });
+
+    if (!sprint) {
+      return res.status(404).json({ message: 'Sprint not found' });
+    }
+
+    const totalTasks = sprint.tasks.length;
+    const completedTasks = sprint.tasks.filter(task => task.status === 'DONE').length;
+    const completionPercentage =
+      totalTasks === 0 ? 0 : Math.round((completedTasks / totalTasks) * 100);
+
+    res.json({
+      sprintId: sprint.id,
+      sprintName: sprint.name,
+      totalTasks,
+      completedTasks,
+      completionPercentage
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const deleteSprint = async (req, res) => {
   try {
     const { id } = req.params;
@@ -47,5 +79,6 @@ const deleteSprint = async (req, res) => {
 
 module.exports = {
   createSprint,
+  getSprintCompletion,
   deleteSprint
 };

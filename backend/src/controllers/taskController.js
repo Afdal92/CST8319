@@ -8,6 +8,34 @@ const createTask = async (req, res) => {
       return res.status(400).json({ message: 'Title and projectId are required' });
     }
 
+    const project = await prisma.project.findUnique({
+      where: { id: Number(projectId) }
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    if (sprintId) {
+      const sprint = await prisma.sprint.findUnique({
+        where: { id: Number(sprintId) }
+      });
+
+      if (!sprint) {
+        return res.status(404).json({ message: 'Sprint not found' });
+      }
+    }
+
+    if (assignedToId) {
+      const assignedUser = await prisma.user.findUnique({
+        where: { id: Number(assignedToId) }
+      });
+
+      if (!assignedUser) {
+        return res.status(404).json({ message: 'Assigned user not found' });
+      }
+    }
+
     const task = await prisma.task.create({
       data: {
         title,
@@ -40,6 +68,14 @@ const updateTaskStatus = async (req, res) => {
       return res.status(400).json({ message: 'Invalid status' });
     }
 
+    const existingTask = await prisma.task.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingTask) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
     const task = await prisma.task.update({
       where: { id: Number(id) },
       data: { status }
@@ -58,6 +94,14 @@ const getProjectTasks = async (req, res) => {
   try {
     const { projectId } = req.params;
 
+    const project = await prisma.project.findUnique({
+      where: { id: Number(projectId) }
+    });
+
+    if (!project) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
     const tasks = await prisma.task.findMany({
       where: {
         projectId: Number(projectId)
@@ -73,6 +117,14 @@ const getProjectTasks = async (req, res) => {
 const deleteTask = async (req, res) => {
   try {
     const { id } = req.params;
+
+    const existingTask = await prisma.task.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingTask) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
 
     await prisma.task.delete({
       where: { id: Number(id) }

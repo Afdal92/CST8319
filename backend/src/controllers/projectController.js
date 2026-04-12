@@ -189,6 +189,31 @@ const addProjectMember = async (req, res) => {
   }
 };
 
+const getProjectMembers = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const members = await prisma.projectMember.findMany({
+      where: {
+        projectId: Number(id)
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    res.json(members);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const deleteProject = async (req, res) => {
   try {
     const { id } = req.params;
@@ -233,5 +258,6 @@ module.exports = {
   getMyProjects,
   updateProject,
   addProjectMember,
+  getProjectMembers,
   deleteProject
 };
