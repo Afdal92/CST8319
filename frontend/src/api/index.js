@@ -10,11 +10,23 @@ export { loginRequest, registerRequest } from './authApi.js';
 export {
   createProjectRequest,
   joinProjectRequest,
+  getAllProjectsRequest,
   getMyProjectsRequest,
+  getProjectMembersRequest,
+  updateProjectRequest,
+  addProjectMemberRequest,
+  deleteProjectRequest,
 } from './projectApi.js';
-export { createSprintRequest } from './sprintApi.js';
 export {
   createTaskRequest,
+  updateTaskRequest,
   updateTaskStatusRequest,
   getProjectTasksRequest,
+  deleteTaskRequest,
 } from './taskApi.js';
+export {
+  createSprintRequest,
+  getProjectSprintsRequest,
+  updateSprintRequest,
+  deleteSprintRequest,
+} from './sprintApi.js';

@@ -7,7 +7,6 @@ import {
   TASK_STATUS,
   getMyProjectsRequest,
   getProjectTasksRequest,
-  createProjectRequest,
 } from '../api/index.js';
 import './DashboardPage.css';
 
@@ -127,11 +126,6 @@ export default function DashboardPage() {
   const [projects, setProjects] = useState(null);
   const [tasksByProject, setTasksByProject] = useState({});
   const [loadError, setLoadError] = useState('');
-  const [showModal, setShowModal] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [createError, setCreateError] = useState('');
-  const [creating, setCreating] = useState(false);
 
   const loadData = useCallback(async () => {
     setLoadError('');
@@ -189,37 +183,6 @@ export default function DashboardPage() {
 
   const weekCounts = useMemo(() => weekdayDoneCounts(allTasks), [allTasks]);
 
-  async function handleCreateProject(e) {
-    e.preventDefault();
-    setCreateError('');
-    if (!newName.trim()) {
-      setCreateError('Project name is required.');
-      return;
-    }
-    setCreating(true);
-    try {
-      const res = await createProjectRequest({
-        name: newName.trim(),
-        description: newDescription.trim() || null,
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setCreateError(body.message || 'Could not create project.');
-        return;
-      }
-      setShowModal(false);
-      setNewName('');
-      setNewDescription('');
-      await loadData();
-      if (body.project && body.project.id != null) {
-        navigate('/projects/' + body.project.id, { replace: true });
-      }
-    } catch {
-      setCreateError('Network error.');
-    } finally {
-      setCreating(false);
-    }
-  }
 
   const sortedProjects = useMemo(() => {
     if (!projects) return [];
@@ -240,9 +203,9 @@ export default function DashboardPage() {
               Welcome back! Here&apos;s what&apos;s happening across your projects.
             </p>
           </div>
-          <button type="button" className="btn btn-dashboard-primary" onClick={() => setShowModal(true)}>
-            + New Project
-          </button>
+          <Link to="/projects" className="btn btn-dashboard-primary">
+            View projects
+          </Link>
         </div>
 
         {loadError ? (
@@ -435,76 +398,6 @@ export default function DashboardPage() {
         )}
       </main>
 
-      {showModal ? (
-        <div className="modal d-block" style={{ background: 'rgb(15 23 42 / 0.45)' }} tabIndex={-1}>
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 rounded-3 shadow">
-              <div className="modal-header border-0 pb-0">
-                <h2 className="modal-title h5 fw-bold">New Project</h2>
-                <button
-                  type="button"
-                  className="btn-close"
-                  aria-label="Close"
-                  onClick={() => {
-                    setShowModal(false);
-                    setCreateError('');
-                  }}
-                />
-              </div>
-              <form onSubmit={handleCreateProject}>
-                <div className="modal-body pt-2">
-                  {createError ? (
-                    <div className="alert alert-danger py-2 small" role="alert">
-                      {createError}
-                    </div>
-                  ) : null}
-                  <div className="mb-3">
-                    <label htmlFor="proj-name" className="form-label small fw-medium text-secondary">
-                      Name <span className="text-danger">*</span>
-                    </label>
-                    <input
-                      id="proj-name"
-                      className="form-control"
-                      value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
-                      placeholder="CS301 Final Project"
-                      required
-                    />
-                  </div>
-                  <div className="mb-0">
-                    <label htmlFor="proj-desc" className="form-label small fw-medium text-secondary">
-                      Description
-                    </label>
-                    <textarea
-                      id="proj-desc"
-                      className="form-control"
-                      rows={3}
-                      value={newDescription}
-                      onChange={(e) => setNewDescription(e.target.value)}
-                      placeholder="Optional short summary for your team"
-                    />
-                  </div>
-                </div>
-                <div className="modal-footer border-0 pt-0">
-                  <button
-                    type="button"
-                    className="btn btn-light"
-                    onClick={() => {
-                      setShowModal(false);
-                      setCreateError('');
-                    }}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" className="btn btn-dashboard-primary" disabled={creating}>
-                    {creating ? 'Creating…' : 'Create project'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }

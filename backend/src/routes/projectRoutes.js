@@ -3,6 +3,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 const {
   createProject,
   joinProject,
+  getAllProjects,
   getMyProjects,
   updateProject,
   addProjectMember,
@@ -14,6 +15,7 @@ const router = express.Router();
 
 router.post('/', authMiddleware, createProject);
 router.post('/join', authMiddleware, joinProject);
+router.get('/', authMiddleware, getAllProjects);
 router.get('/my', authMiddleware, getMyProjects);
 
 // GET project members

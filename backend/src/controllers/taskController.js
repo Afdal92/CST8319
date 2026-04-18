@@ -90,6 +90,99 @@ const updateTaskStatus = async (req, res) => {
   }
 };
 
+const updateTask = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { title, description, sprintId, assignedToId, dueDate, status } = req.body;
+
+    const existingTask = await prisma.task.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingTask) {
+      return res.status(404).json({ message: 'Task not found' });
+    }
+
+    if (sprintId != null) {
+      const sprint = await prisma.sprint.findUnique({
+        where: { id: Number(sprintId) }
+      });
+
+      if (!sprint) {
+        return res.status(404).json({ message: 'Sprint not found' });
+      }
+    }
+
+    if (assignedToId != null) {
+      const assignedUser = await prisma.user.findUnique({
+        where: { id: Number(assignedToId) }
+      });
+
+      if (!assignedUser) {
+        return res.status(404).json({ message: 'Assigned user not found' });
+      }
+    }
+
+    const nextData = {};
+
+    if (title === undefined) {
+      nextData.title = existingTask.title;
+    } else {
+      nextData.title = title;
+    }
+
+    if (description === undefined) {
+      nextData.description = existingTask.description;
+    } else {
+      nextData.description = description;
+    }
+
+    if (sprintId === undefined) {
+      nextData.sprintId = existingTask.sprintId;
+    } else if (sprintId == null) {
+      nextData.sprintId = null;
+    } else {
+      nextData.sprintId = Number(sprintId);
+    }
+
+    if (assignedToId === undefined) {
+      nextData.assignedToId = existingTask.assignedToId;
+    } else if (assignedToId == null) {
+      nextData.assignedToId = null;
+    } else {
+      nextData.assignedToId = Number(assignedToId);
+    }
+
+    if (dueDate === undefined) {
+      nextData.dueDate = existingTask.dueDate;
+    } else if (dueDate) {
+      nextData.dueDate = new Date(dueDate);
+    } else {
+      nextData.dueDate = null;
+    }
+
+    if (status !== undefined) {
+      const allowedStatuses = ['TODO', 'IN_PROGRESS', 'DONE'];
+      if (!allowedStatuses.includes(status)) {
+        return res.status(400).json({ message: 'Invalid status' });
+      }
+      nextData.status = status;
+    }
+
+    const task = await prisma.task.update({
+      where: { id: Number(id) },
+      data: nextData
+    });
+
+    res.json({
+      message: 'Task updated successfully',
+      task
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const getProjectTasks = async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -138,6 +231,7 @@ const deleteTask = async (req, res) => {
 
 module.exports = {
   createTask,
+  updateTask,
   updateTaskStatus,
   getProjectTasks,
   deleteTask

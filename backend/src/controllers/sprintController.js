@@ -26,6 +26,56 @@ const createSprint = async (req, res) => {
   }
 };
 
+const getProjectSprints = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+
+    const sprints = await prisma.sprint.findMany({
+      where: {
+        projectId: Number(projectId)
+      },
+      orderBy: {
+        startDate: 'asc'
+      }
+    });
+
+    res.json(sprints);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+const updateSprint = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name, startDate, endDate } = req.body;
+
+    const existingSprint = await prisma.sprint.findUnique({
+      where: { id: Number(id) }
+    });
+
+    if (!existingSprint) {
+      return res.status(404).json({ message: 'Sprint not found' });
+    }
+
+    const sprint = await prisma.sprint.update({
+      where: { id: Number(id) },
+      data: {
+        name: name ?? existingSprint.name,
+        startDate: startDate ? new Date(startDate) : existingSprint.startDate,
+        endDate: endDate ? new Date(endDate) : existingSprint.endDate
+      }
+    });
+
+    res.json({
+      message: 'Sprint updated successfully',
+      sprint
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 const getSprintCompletion = async (req, res) => {
   try {
     const { id } = req.params;
@@ -79,6 +129,8 @@ const deleteSprint = async (req, res) => {
 
 module.exports = {
   createSprint,
+  getProjectSprints,
+  updateSprint,
   getSprintCompletion,
   deleteSprint
 };

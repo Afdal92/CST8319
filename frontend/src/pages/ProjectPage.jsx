@@ -5,25 +5,29 @@ import AppFooter from '../components/layout/AppFooter.jsx';
 import {
   TASK_STATUS,
   TASK_PRIORITY,
+  PROJECT_MEMBER_ROLE,
   getMyProjectsRequest,
   getProjectTasksRequest,
   createTaskRequest,
+  updateTaskRequest,
+  deleteTaskRequest,
   updateTaskStatusRequest,
   createSprintRequest,
+  getProjectSprintsRequest,
+  updateSprintRequest,
+  deleteSprintRequest,
+  getProjectMembersRequest,
+  updateProjectRequest,
+  deleteProjectRequest,
 } from '../api/index.js';
+import { decodeJwtPayload } from '../utils/jwtDecode.js';
 import {
   getSprintRecord,
   saveSprintRecord,
   getTaskPriority,
   saveTaskPriority,
   formatSprintDateRange,
-  listSprintsForAssignment,
-  isSprintRemovedLocally,
-  isTaskRemovedLocally,
-  removeTaskLocally,
-  removeSprintLocally,
   mergeTaskWithUi,
-  persistTaskEdit,
 } from '../utils/projectUiStorage.js';
 import './DashboardPage.css';
 import './ProjectPage.css';
@@ -262,10 +266,13 @@ export default function ProjectPage() {
   const pid = Number(projectId);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const view = searchParams.get('view') === 'backlog' ? 'backlog' : 'board';
+  const viewParam = searchParams.get('view');
+  const view =
+    viewParam === 'backlog' || viewParam === 'sprints' ? viewParam : 'board';
 
   const [project, setProject] = useState(null);
   const [tasks, setTasks] = useState([]);
+  const [sprints, setSprints] = useState([]);
   const [loadError, setLoadError] = useState('');
   const [notFound, setNotFound] = useState(false);
 
@@ -280,6 +287,7 @@ export default function ProjectPage() {
   const [editTaskId, setEditTaskId] = useState(null);
 
   const [sprintModal, setSprintModal] = useState(false);
+  const [editSprintId, setEditSprintId] = useState(null);
   const [sprintName, setSprintName] = useState('Sprint');
   const [sprintStart, setSprintStart] = useState('');
   const [sprintEnd, setSprintEnd] = useState('');
@@ -290,6 +298,12 @@ export default function ProjectPage() {
   // bumps when local-only ui prefs change so board re-sorts and re-renders
   const [uiRefresh, setUiRefresh] = useState(0);
   const [addPriority, setAddPriority] = useState(TASK_PRIORITY.MEDIUM);
+
+  const [members, setMembers] = useState([]);
+  const [editProjectName, setEditProjectName] = useState('');
+  const [editProjectDescription, setEditProjectDescription] = useState('');
+  const [projectSettingsError, setProjectSettingsError] = useState('');
+  const [projectSettingsBusy, setProjectSettingsBusy] = useState(false);
 
   const loadData = useCallback(async () => {
     if (!Number.isFinite(pid) || pid < 1) {
@@ -321,26 +335,59 @@ export default function ProjectPage() {
     }
     setProject(p);
 
-    const tr = await getProjectTasksRequest(pid);
+    const [tr, membersRes, sprintRes] = await Promise.all([
+      getProjectTasksRequest(pid),
+      getProjectMembersRequest(pid),
+      getProjectSprintsRequest(pid),
+    ]);
+
     if (!tr.ok) {
       setLoadError('Could not load tasks.');
       setTasks([]);
-      return;
+    } else {
+      const td = await tr.json().catch(() => []);
+      setTasks(Array.isArray(td) ? td : []);
     }
-    const td = await tr.json().catch(() => []);
-    setTasks(Array.isArray(td) ? td : []);
+
+    if (!membersRes.ok) {
+      setMembers([]);
+    } else {
+      const memberData = await membersRes.json().catch(() => []);
+      setMembers(Array.isArray(memberData) ? memberData : []);
+    }
+
+    if (!sprintRes.ok) {
+      setSprints([]);
+    } else {
+      const sprintData = await sprintRes.json().catch(() => []);
+      const nextSprints = Array.isArray(sprintData) ? sprintData : [];
+      setSprints(nextSprints);
+      for (let i = 0; i < nextSprints.length; i++) {
+        const sprint = nextSprints[i];
+        saveSprintRecord(sprint.id, {
+          name: sprint.name,
+          startDate: sprint.startDate,
+          endDate: sprint.endDate,
+          projectId: sprint.projectId,
+        });
+      }
+    }
   }, [navigate, pid]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  // server tasks minus locally hidden rows, merged with local title/description/sprint overrides
+  useEffect(() => {
+    if (project) {
+      setEditProjectName(project.name);
+      setEditProjectDescription(project.description || '');
+    }
+  }, [project]);
+
+  // server tasks merged with local ui details like priority and cached sprint labels
   const displayTasks = useMemo(
-    () =>
-      tasks
-        .filter((t) => !isTaskRemovedLocally(pid, t.id))
-        .map((t) => mergeTaskWithUi(pid, t)),
+    () => tasks.map((t) => mergeTaskWithUi(pid, t)),
     [tasks, pid, uiRefresh]
   );
 
@@ -360,7 +407,7 @@ export default function ProjectPage() {
   }, [displayTasks]);
 
   const effectiveSprintId = useMemo(function () {
-    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) {
+    if (focusSprintId != null) {
       return focusSprintId;
     }
     if (sprintIdsInTasks.length === 0) {
@@ -371,32 +418,26 @@ export default function ProjectPage() {
 
   const sprintOptions = useMemo(function () {
     const ids = [];
-    for (let i = 0; i < sprintIdsInTasks.length; i++) {
-      ids.push(sprintIdsInTasks[i]);
+    for (let i = 0; i < sprints.length; i++) {
+      ids.push(Number(sprints[i].id));
     }
-    if (focusSprintId != null && !isSprintRemovedLocally(pid, focusSprintId)) {
-      if (ids.indexOf(focusSprintId) === -1) {
-        ids.push(focusSprintId);
-      }
+    if (focusSprintId != null && ids.indexOf(Number(focusSprintId)) === -1) {
+      ids.push(Number(focusSprintId));
     }
-    const filtered = ids.filter(function (id) {
-      return !isSprintRemovedLocally(pid, id);
-    });
-    filtered.sort(function (a, b) {
+    ids.sort(function (a, b) {
       return a - b;
     });
-    return filtered;
-  }, [sprintIdsInTasks, focusSprintId, pid, uiRefresh]);
+    return ids;
+  }, [sprints, focusSprintId]);
 
-  const assignableSprints = useMemo(
-    () =>
-      listSprintsForAssignment(
-        pid,
-        sprintIdsInTasks,
-        focusSprintId != null ? [focusSprintId] : []
-      ),
-    [pid, sprintIdsInTasks, focusSprintId, uiRefresh]
-  );
+  const assignableSprints = useMemo(function () {
+    return sprints.map(function (sprint) {
+      return {
+        id: Number(sprint.id),
+        name: sprint.name,
+      };
+    });
+  }, [sprints]);
 
   // options in the new-task modal; keeps pre-selected sprint if the list changes
   const sprintChoicesForModal = useMemo(function () {
@@ -449,36 +490,55 @@ export default function ProjectPage() {
     setUiRefresh((x) => x + 1);
   }
 
-  function handleDeleteTaskLocal(taskId) {
+  async function handleDeleteTask(taskId) {
     if (
       !window.confirm(
-        'Hide this task on this device only?\n\nIt will still exist for your team until permanently removed by an admin or future feature.'
+        'Delete this task for everyone in the project?'
       )
     ) {
       return;
     }
-    removeTaskLocally(pid, taskId);
-    setUiRefresh((x) => x + 1);
+    try {
+      const res = await deleteTaskRequest(taskId);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(body.message || 'Could not delete task.');
+        return;
+      }
+      await loadData();
+    } catch {
+      alert('Network error.');
+    }
   }
 
-  function handleDeleteSprintLocal() {
-    if (effectiveSprintId == null) return;
+  async function handleDeleteSprint(sprintId) {
+    if (sprintId == null) return;
     if (
       !window.confirm(
-        `Hide sprint #${effectiveSprintId} and its tasks on this device only?\n\nYour team can still see them; this does not remove them from the project.`
+        'Delete this sprint? Tasks in it will move back to the backlog.'
       )
     ) {
       return;
     }
-    const taskIds = tasks.filter((t) => t.sprintId === effectiveSprintId).map((t) => t.id);
-    removeSprintLocally(pid, effectiveSprintId, taskIds);
-    setFocusSprintId(null);
-    setUiRefresh((x) => x + 1);
+    try {
+      const res = await deleteSprintRequest(sprintId);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(body.message || 'Could not delete sprint.');
+        return;
+      }
+      if (focusSprintId === sprintId) {
+        setFocusSprintId(null);
+      }
+      await loadData();
+    } catch {
+      alert('Network error.');
+    }
   }
 
   function setView(next) {
     const nextParams = new URLSearchParams(searchParams);
-    if (next === 'backlog') nextParams.set('view', 'backlog');
+    if (next === 'backlog' || next === 'sprints') nextParams.set('view', next);
     else nextParams.delete('view');
     setSearchParams(nextParams, { replace: true });
   }
@@ -497,20 +557,28 @@ export default function ProjectPage() {
     }
   }
 
-  // `opts` can include `status` and `sprintId`
+  // `opts` can include `status`, `sprintId`, and `task`
   function openAddTask(opts = {}) {
-    const { status, sprintId } = opts;
-    setAddStatus(status ?? TASK_STATUS.TODO);
-    if (sprintId === undefined) {
-      setAddSprintId(null);
-    } else if (sprintId == null) {
-      setAddSprintId(null);
+    const { status, sprintId, task } = opts;
+    if (task) {
+      setEditTaskId(task.id);
+      setAddStatus(task.status);
+      setAddSprintId(task.sprintId == null ? null : Number(task.sprintId));
+      setAddPriority(getTaskPriority(pid, task.id));
+      setAddTitle(task.title || '');
+      setAddDescription(task.description || '');
     } else {
-      setAddSprintId(Number(sprintId));
+      setEditTaskId(null);
+      setAddStatus(status ?? TASK_STATUS.TODO);
+      if (sprintId === undefined || sprintId == null) {
+        setAddSprintId(null);
+      } else {
+        setAddSprintId(Number(sprintId));
+      }
+      setAddPriority(TASK_PRIORITY.MEDIUM);
+      setAddTitle('');
+      setAddDescription('');
     }
-    setAddPriority(TASK_PRIORITY.MEDIUM);
-    setAddTitle('');
-    setAddDescription('');
     setAddError('');
     setAddOpen(true);
   }
@@ -533,35 +601,53 @@ export default function ProjectPage() {
     try {
       const sprintIdClean =
         addSprintId != null && Number.isFinite(Number(addSprintId)) ? Number(addSprintId) : null;
-      const res = await createTaskRequest({
-        title: addTitle.trim(),
-        description: addDescription.trim() || null,
-        projectId: pid,
-        sprintId: sprintIdClean,
-        assignedToId: null,
-        dueDate: null,
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setAddError(body.message || 'Could not create task.');
-        return;
-      }
       let newId = null;
-      if (body.task && body.task.id != null) {
-        newId = body.task.id;
-      }
-      if (newId != null && addStatus !== TASK_STATUS.TODO) {
-        const r2 = await updateTaskStatusRequest(newId, addStatus);
-        if (!r2.ok) {
-          const b2 = await r2.json().catch(() => ({}));
-          setAddError(b2.message || 'Task created but status update failed.');
+      if (editTaskId != null) {
+        const res = await updateTaskRequest(editTaskId, {
+          title: addTitle.trim(),
+          description: addDescription.trim() || null,
+          sprintId: sprintIdClean,
+          assignedToId: null,
+          dueDate: null,
+          status: addStatus,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setAddError(body.message || 'Could not update task.');
           return;
+        }
+        newId = editTaskId;
+      } else {
+        const res = await createTaskRequest({
+          title: addTitle.trim(),
+          description: addDescription.trim() || null,
+          projectId: pid,
+          sprintId: sprintIdClean,
+          assignedToId: null,
+          dueDate: null,
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setAddError(body.message || 'Could not create task.');
+          return;
+        }
+        if (body.task && body.task.id != null) {
+          newId = body.task.id;
+        }
+        if (newId != null && addStatus !== TASK_STATUS.TODO) {
+          const r2 = await updateTaskStatusRequest(newId, addStatus);
+          if (!r2.ok) {
+            const b2 = await r2.json().catch(() => ({}));
+            setAddError(b2.message || 'Task created but status update failed.');
+            return;
+          }
         }
       }
       if (newId != null) {
         saveTaskPriority(pid, newId, addPriority);
         setUiRefresh((x) => x + 1);
       }
+      setEditTaskId(null);
       setAddOpen(false);
       await loadData();
     } catch {
@@ -580,15 +666,22 @@ export default function ProjectPage() {
     }
     setSprintSaving(true);
     try {
-      const res = await createSprintRequest({
-        name: sprintName.trim(),
-        startDate: sprintStart,
-        endDate: sprintEnd,
-        projectId: pid,
-      });
+      const res =
+        editSprintId != null
+          ? await updateSprintRequest(editSprintId, {
+              name: sprintName.trim(),
+              startDate: sprintStart,
+              endDate: sprintEnd,
+            })
+          : await createSprintRequest({
+              name: sprintName.trim(),
+              startDate: sprintStart,
+              endDate: sprintEnd,
+              projectId: pid,
+            });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setSprintError(body.message || 'Could not create sprint.');
+        setSprintError(body.message || (editSprintId != null ? 'Could not update sprint.' : 'Could not create sprint.'));
         return;
       }
       if (body.sprint && body.sprint.id != null) {
@@ -601,7 +694,9 @@ export default function ProjectPage() {
         setFocusSprintId(body.sprint.id);
         setUiRefresh((x) => x + 1);
       }
+      setEditSprintId(null);
       setSprintModal(false);
+      await loadData();
     } catch {
       setSprintError('Network error.');
     } finally {
@@ -609,8 +704,108 @@ export default function ProjectPage() {
     }
   }
 
+  function openSprintEditor(sprint) {
+    if (sprint) {
+      setEditSprintId(sprint.id);
+      setSprintName(sprint.name || '');
+      setSprintStart(String(sprint.startDate || '').slice(0, 16));
+      setSprintEnd(String(sprint.endDate || '').slice(0, 16));
+    } else {
+      setEditSprintId(null);
+      setSprintName('Sprint');
+      setSprintStart('');
+      setSprintEnd('');
+    }
+    setSprintError('');
+    setSprintModal(true);
+  }
+
+  const token = typeof localStorage !== 'undefined' ? localStorage.getItem('token') : null;
+  const jwtPayload = decodeJwtPayload(token);
+  let currentUserId = null;
+  if (jwtPayload && jwtPayload.id != null && Number.isFinite(Number(jwtPayload.id))) {
+    currentUserId = Number(jwtPayload.id);
+  }
+  const isProjectOwner =
+    project != null && currentUserId != null && Number(project.ownerUserId) === currentUserId;
+
+  async function handleUpdateProject(e) {
+    e.preventDefault();
+    setProjectSettingsError('');
+    if (!editProjectName.trim()) {
+      setProjectSettingsError('Project name is required.');
+      return;
+    }
+    setProjectSettingsBusy(true);
+    try {
+      const res = await updateProjectRequest(pid, {
+        name: editProjectName.trim(),
+        description: editProjectDescription.trim() || null,
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProjectSettingsError(body.message || 'Could not update project.');
+        return;
+      }
+      if (body.project) {
+        setProject(body.project);
+      } else {
+        await loadData();
+      }
+    } catch {
+      setProjectSettingsError('Network error.');
+    } finally {
+      setProjectSettingsBusy(false);
+    }
+  }
+
+  async function handleDeleteProject() {
+    if (
+      !window.confirm(
+        'Delete this entire project for everyone? All tasks, sprints, and members will be removed. This cannot be undone.'
+      )
+    ) {
+      return;
+    }
+    setProjectSettingsError('');
+    setProjectSettingsBusy(true);
+    try {
+      const res = await deleteProjectRequest(pid);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProjectSettingsError(body.message || 'Could not delete project.');
+        setProjectSettingsBusy(false);
+        return;
+      }
+      navigate('/projects', { replace: true });
+    } catch {
+      setProjectSettingsError('Network error.');
+      setProjectSettingsBusy(false);
+    }
+  }
+
   const sprintDone = sprintTasks.filter((t) => t.status === TASK_STATUS.DONE).length;
   const sprintTotal = sprintTasks.length;
+  const sprintsWithTasks = sprints.map(function (sprint) {
+    const tasks = displayTasks.filter(function (task) {
+      return Number(task.sprintId) === Number(sprint.id);
+    });
+    let doneCount = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      if (tasks[i].status === TASK_STATUS.DONE) {
+        doneCount++;
+      }
+    }
+    const totalCount = tasks.length;
+    const pct = totalCount === 0 ? 0 : Math.round((doneCount / totalCount) * 100);
+    return {
+      sprint: sprint,
+      tasks: tasks,
+      doneCount: doneCount,
+      totalCount: totalCount,
+      pct: pct,
+    };
+  });
 
   const focusedSprintMeta = effectiveSprintId != null ? getSprintRecord(effectiveSprintId) : null;
 
@@ -663,6 +858,10 @@ export default function ProjectPage() {
                 <p className="text-secondary mb-0 small" style={{ maxWidth: 720 }}>
                   {project.description || 'No description yet.'}
                 </p>
+                <div className="small mt-2">
+                  <span className="text-muted">Join code: </span>
+                  <span className="fw-semibold text-dark">{project.joinCode}</span>
+                </div>
               </div>
               <div className="project-view-toggle btn-group" role="group" aria-label="View mode">
                 <input
@@ -689,8 +888,114 @@ export default function ProjectPage() {
                 <label className="btn btn-outline-secondary" htmlFor="view-backlog">
                   Backlog
                 </label>
+                <input
+                  type="radio"
+                  className="btn-check"
+                  name="viewmode"
+                  id="view-sprints"
+                  checked={view === 'sprints'}
+                  onChange={() => setView('sprints')}
+                  autoComplete="off"
+                />
+                <label className="btn btn-outline-secondary" htmlFor="view-sprints">
+                  Sprints
+                </label>
               </div>
             </div>
+
+            <section className="project-settings-card backlog-sprint-card p-4 mb-4" aria-label="Project team and settings">
+              <h2 className="h6 fw-bold mb-3" style={{ color: '#0f172a' }}>
+                Project team
+              </h2>
+              {members.length === 0 ? (
+                <p className="small text-secondary mb-0">No members listed yet.</p>
+              ) : (
+                <ul className="list-unstyled mb-0">
+                  {members.map((m) => {
+                    const u = m.user;
+                    const displayName = u && u.name ? u.name : 'Member';
+                    const email = u && u.email ? u.email : '';
+                    const isOwnerRow = m.role === PROJECT_MEMBER_ROLE.OWNER;
+                    return (
+                      <li
+                        key={m.id}
+                        className="d-flex flex-wrap align-items-center gap-2 py-2 border-bottom"
+                      >
+                        <span className="fw-medium">{displayName}</span>
+                        {email ? <span className="small text-muted">{email}</span> : null}
+                        <span className="badge bg-light border text-secondary small">{m.role}</span>
+                        {isOwnerRow ? (
+                          <span className="badge text-white small" style={{ background: '#5d45fd' }}>
+                            Owner
+                          </span>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+
+              {projectSettingsError ? (
+                <div className="alert alert-warning py-2 small mt-3 mb-0" role="alert">
+                  {projectSettingsError}
+                </div>
+              ) : null}
+
+              {isProjectOwner ? (
+                <div className="mt-3 pt-3 border-top">
+                  <h3 className="h6 fw-bold mb-2" style={{ color: '#0f172a' }}>
+                    Edit project
+                  </h3>
+                  <form onSubmit={handleUpdateProject} className="mb-4">
+                    <div className="mb-2">
+                      <label className="form-label small" htmlFor="proj-settings-name">
+                        Name
+                      </label>
+                      <input
+                        id="proj-settings-name"
+                        className="form-control form-control-sm"
+                        value={editProjectName}
+                        onChange={(e) => setEditProjectName(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="mb-2">
+                      <label className="form-label small" htmlFor="proj-settings-desc">
+                        Description
+                      </label>
+                      <textarea
+                        id="proj-settings-desc"
+                        className="form-control form-control-sm"
+                        rows={2}
+                        value={editProjectDescription}
+                        onChange={(e) => setEditProjectDescription(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      className="btn btn-sm btn-project-primary"
+                      disabled={projectSettingsBusy}
+                    >
+                      Save changes
+                    </button>
+                  </form>
+
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-outline-danger"
+                      disabled={projectSettingsBusy}
+                      onClick={handleDeleteProject}
+                    >
+                      Delete entire project
+                    </button>
+                    <p className="small text-muted mt-2 mb-0">
+                      Removes the project, tasks, sprints, and memberships for everyone
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+            </section>
 
             {view === 'board' ? (
               <div className="d-flex flex-column flex-xl-row gap-3 pb-4 overflow-auto">
@@ -703,7 +1008,8 @@ export default function ProjectPage() {
                   onAdd={() => openAddTask({ status: TASK_STATUS.TODO })}
                   onStatusChange={patchStatus}
                   onPriorityChange={handlePriorityChange}
-                  onDeleteTask={handleDeleteTaskLocal}
+                  onEditTask={(task) => openAddTask({ task: task })}
+                  onDeleteTask={handleDeleteTask}
                 />
                 <KanbanColumn
                   title="In Progress"
@@ -714,7 +1020,8 @@ export default function ProjectPage() {
                   onAdd={() => openAddTask({ status: TASK_STATUS.IN_PROGRESS })}
                   onStatusChange={patchStatus}
                   onPriorityChange={handlePriorityChange}
-                  onDeleteTask={handleDeleteTaskLocal}
+                  onEditTask={(task) => openAddTask({ task: task })}
+                  onDeleteTask={handleDeleteTask}
                 />
                 <KanbanColumn
                   title="Done"
@@ -725,10 +1032,11 @@ export default function ProjectPage() {
                   onAdd={() => openAddTask({ status: TASK_STATUS.DONE })}
                   onStatusChange={patchStatus}
                   onPriorityChange={handlePriorityChange}
-                  onDeleteTask={handleDeleteTaskLocal}
+                  onEditTask={(task) => openAddTask({ task: task })}
+                  onDeleteTask={handleDeleteTask}
                 />
               </div>
-            ) : (
+            ) : view === 'backlog' ? (
               <div className="pb-4">
                 <section className="backlog-sprint-card mb-4">
                   <div className="d-flex flex-column flex-md-row align-items-start align-items-md-center justify-content-between gap-3 p-3 border-bottom">
@@ -764,15 +1072,14 @@ export default function ProjectPage() {
                           {sprintDone} of {sprintTotal} tasks done
                         </span>
                       ) : null}
-                      <button type="button" className="btn btn-link btn-sm text-decoration-none" style={{ color: '#5d45fd' }} onClick={() => setSprintModal(true)}>
+                      <button type="button" className="btn btn-link btn-sm text-decoration-none" style={{ color: '#5d45fd' }} onClick={() => openSprintEditor(null)}>
                         + New sprint
                       </button>
                       {effectiveSprintId != null ? (
                         <button
                           type="button"
                           className="btn btn-outline-danger btn-sm"
-                          onClick={handleDeleteSprintLocal}
-                          title="Hides sprint and its tasks in this browser only"
+                          onClick={() => handleDeleteSprint(effectiveSprintId)}
                         >
                           Delete sprint
                         </button>
@@ -786,7 +1093,7 @@ export default function ProjectPage() {
                   {!effectiveSprintId ? (
                     <div className="p-4 text-center text-secondary small">
                       <p className="mb-2">Create a sprint, then add tasks and assign them to that sprint when you create them.</p>
-                      <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setSprintModal(true)}>
+                      <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => openSprintEditor(null)}>
                         + New sprint
                       </button>
                     </div>
@@ -847,7 +1154,8 @@ export default function ProjectPage() {
                                 task={t}
                                 onStatus={(s) => patchStatus(t.id, s)}
                                 onPriority={(p) => handlePriorityChange(t.id, p)}
-                                onDelete={() => handleDeleteTaskLocal(t.id)}
+                                onEdit={() => openAddTask({ task: t })}
+                                onDelete={() => handleDeleteTask(t.id)}
                               />
                             </div>
                           ))
@@ -900,11 +1208,121 @@ export default function ProjectPage() {
                             task={t}
                             onStatus={(s) => patchStatus(t.id, s)}
                             onPriority={(p) => handlePriorityChange(t.id, p)}
-                            onDelete={() => handleDeleteTaskLocal(t.id)}
+                            onEdit={() => openAddTask({ task: t })}
+                            onDelete={() => handleDeleteTask(t.id)}
                           />
                         </li>
                       ))}
                     </ul>
+                  )}
+                </section>
+              </div>
+            ) : (
+              <div className="pb-4">
+                <section className="backlog-sprint-card p-4">
+                  <div className="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                      <h2 className="h6 fw-bold mb-1" style={{ color: '#0f172a' }}>
+                        All sprints
+                      </h2>
+                      <p className="small text-secondary mb-0">
+                        View every sprint, edit sprint details, and see all tasks assigned to each sprint
+                      </p>
+                    </div>
+                    <button type="button" className="btn btn-project-primary btn-sm" onClick={() => openSprintEditor(null)}>
+                      + New sprint
+                    </button>
+                  </div>
+
+                  {sprintsWithTasks.length === 0 ? (
+                    <div className="border border-2 border-dashed rounded-3 p-4 text-center text-secondary small">
+                      <p className="mb-2">No sprints yet for this project.</p>
+                      <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openSprintEditor(null)}>
+                        Create first sprint
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="d-flex flex-column gap-3">
+                      {sprintsWithTasks.map(function (item) {
+                        const sprint = item.sprint;
+                        const sprintTaskList = item.tasks;
+                        const doneCount = item.doneCount;
+                        const totalCount = item.totalCount;
+                        const pct = item.pct;
+                        return (
+                          <section key={sprint.id} className="border rounded-3 p-3">
+                            <div className="d-flex flex-column flex-md-row justify-content-between gap-3 mb-3">
+                              <div>
+                                <div className="d-flex align-items-center gap-2 flex-wrap">
+                                  <h3 className="h6 fw-bold mb-0" style={{ color: '#0f172a' }}>
+                                    {sprint.name}
+                                  </h3>
+                                  <span className="badge bg-light text-secondary border">Sprint #{sprint.id}</span>
+                                </div>
+                                <div className="small text-muted mt-1">
+                                  {formatSprintDateRange(sprint.startDate, sprint.endDate)}
+                                </div>
+                                <div className="small text-muted mt-2">
+                                  {totalCount === 0 ? (
+                                    <span>No tasks in this sprint yet</span>
+                                  ) : (
+                                    <span>
+                                      {doneCount} of {totalCount} tasks done ({pct}%)
+                                    </span>
+                                  )}
+                                </div>
+                                <div
+                                  className="sprint-completion-bar mt-1"
+                                  role="progressbar"
+                                  aria-valuenow={pct}
+                                  aria-valuemin={0}
+                                  aria-valuemax={100}
+                                  aria-label={'Sprint completion ' + pct + ' percent'}
+                                >
+                                  <div className="sprint-completion-bar__fill" style={{ width: pct + '%' }} />
+                                </div>
+                              </div>
+                              <div className="d-flex gap-2 flex-wrap">
+                                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openAddTask({ sprintId: sprint.id, status: TASK_STATUS.TODO })}>
+                                  Add task
+                                </button>
+                                <button type="button" className="btn btn-sm btn-outline-secondary" onClick={() => openSprintEditor(sprint)}>
+                                  Edit sprint
+                                </button>
+                                <button type="button" className="btn btn-sm btn-outline-danger" onClick={() => handleDeleteSprint(sprint.id)}>
+                                  Delete sprint
+                                </button>
+                              </div>
+                            </div>
+
+                            {sprintTaskList.length === 0 ? (
+                              <p className="small text-secondary mb-0">No tasks assigned to this sprint yet.</p>
+                            ) : (
+                              <div className="d-flex flex-column gap-2">
+                                {sprintTaskList.map(function (task) {
+                                  return (
+                                    <div key={task.id} className="backlog-row d-flex align-items-center gap-3 border rounded-3">
+                                      <PriorityPill level={getTaskPriority(pid, task.id)} />
+                                      <div className="flex-grow-1 min-w-0">
+                                        <div className="fw-semibold small">{task.title}</div>
+                                        <div className="small text-muted">{statusLabel(task.status)}</div>
+                                      </div>
+                                      <TaskCardMenu
+                                        task={task}
+                                        onStatus={(s) => patchStatus(task.id, s)}
+                                        onPriority={(p) => handlePriorityChange(task.id, p)}
+                                        onEdit={() => openAddTask({ task: task })}
+                                        onDelete={() => handleDeleteTask(task.id)}
+                                      />
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </section>
+                        );
+                      })}
+                    </div>
                   )}
                 </section>
               </div>
@@ -922,8 +1340,16 @@ export default function ProjectPage() {
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content border-0 rounded-3">
               <div className="modal-header border-0">
-                <h2 className="modal-title h5 fw-bold">New task</h2>
-                <button type="button" className="btn-close" aria-label="Close" onClick={() => setAddOpen(false)} />
+                <h2 className="modal-title h5 fw-bold">{editTaskId != null ? 'Edit task' : 'New task'}</h2>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => {
+                    setAddOpen(false);
+                    setEditTaskId(null);
+                  }}
+                />
               </div>
               <form onSubmit={submitAddTask}>
                 <div className="modal-body pt-0">
@@ -988,11 +1414,18 @@ export default function ProjectPage() {
                   </div>
                 </div>
                 <div className="modal-footer border-0">
-                  <button type="button" className="btn btn-light" onClick={() => setAddOpen(false)}>
+                  <button
+                    type="button"
+                    className="btn btn-light"
+                    onClick={() => {
+                      setAddOpen(false);
+                      setEditTaskId(null);
+                    }}
+                  >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-project-primary" disabled={addSaving}>
-                    {addSaving ? 'Saving…' : 'Create task'}
+                    {addSaving ? 'Saving…' : editTaskId != null ? 'Save task' : 'Create task'}
                   </button>
                 </div>
               </form>
@@ -1006,8 +1439,16 @@ export default function ProjectPage() {
           <div className="modal-dialog modal-dialog-centered">
             <div className="modal-content border-0 rounded-3">
               <div className="modal-header border-0">
-                <h2 className="modal-title h5 fw-bold">New sprint</h2>
-                <button type="button" className="btn-close" aria-label="Close" onClick={() => setSprintModal(false)} />
+                <h2 className="modal-title h5 fw-bold">{editSprintId != null ? 'Edit sprint' : 'New sprint'}</h2>
+                <button
+                  type="button"
+                  className="btn-close"
+                  aria-label="Close"
+                  onClick={() => {
+                    setSprintModal(false);
+                    setEditSprintId(null);
+                  }}
+                />
               </div>
               <form onSubmit={submitSprint}>
                 <div className="modal-body pt-0">
@@ -1032,11 +1473,18 @@ export default function ProjectPage() {
                   </div>
                 </div>
                 <div className="modal-footer border-0">
-                  <button type="button" className="btn btn-light" onClick={() => setSprintModal(false)}>
+                  <button
+                    type="button"
+                    className="btn btn-light"
+                    onClick={() => {
+                      setSprintModal(false);
+                      setEditSprintId(null);
+                    }}
+                  >
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-project-primary" disabled={sprintSaving}>
-                    {sprintSaving ? 'Creating…' : 'Create sprint'}
+                    {sprintSaving ? 'Saving…' : editSprintId != null ? 'Save sprint' : 'Create sprint'}
                   </button>
                 </div>
               </form>
