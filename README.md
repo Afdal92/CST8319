@@ -129,7 +129,7 @@ Protected routes expect a **Bearer** token (`Authorization: Bearer <token>`) fro
 
 Examples of route groups: `/api/auth`, `/api/projects`, `/api/sprints`, `/api/tasks`. See `backend/README.md` for a shorter endpoint list maintained with the backend.
 
-## Recent changes (April 2026)
+## Recent changes
 
 ### Project discovery and joining
 
@@ -167,13 +167,3 @@ Examples of route groups: `/api/auth`, `/api/projects`, `/api/sprints`, `/api/ta
 - Existing task status route is still supported:
   - `PATCH /api/tasks/:id/status`
 
-### New docs and diagrams
-
-- Added daily change notes:
-  - `TODAY_CHANGES.md`
-  - `CHANGES_TODAY.txt`
-- Added PlantUML class diagrams:
-  - `CLASS_DIAGRAM_DOMAIN.puml` (domain entities/relations)
-  - `CLASS_DIAGRAM_API.puml` (routes/controllers/middleware/data access)
-- Added beginner-friendly diagram explanation:
-  - `DIAGRAMS_SUMMARY.txt`
