@@ -128,3 +128,52 @@ Stops both when you press **Ctrl+C** (or if one process exits).
 Protected routes expect a **Bearer** token (`Authorization: Bearer <token>`) from `POST /api/auth/login` or after register/login flow in the UI.
 
 Examples of route groups: `/api/auth`, `/api/projects`, `/api/sprints`, `/api/tasks`. See `backend/README.md` for a shorter endpoint list maintained with the backend.
+
+## Recent changes (April 2026)
+
+### Project discovery and joining
+
+- Projects page now shows **all projects** (`GET /api/projects`) with joined/not joined status.
+- Join and create project actions were moved from Dashboard to the **Projects** page.
+- Joined projects now show role badges and join code in the list.
+- Project page header shows the project join code for easier sharing.
+
+### Project management
+
+- Owners can now update and delete projects from the UI.
+- Added project member management endpoints and frontend wiring:
+  - `GET /api/projects/:id/members`
+  - `POST /api/projects/:id/members`
+  - `PATCH /api/projects/:id`
+  - `DELETE /api/projects/:id`
+
+### Sprint management
+
+- Added a dedicated **Sprints** tab on the project page (next to Board and Backlog).
+- Sprints tab supports create, view, edit, and delete sprint.
+- Backend sprint routes now include:
+  - `GET /api/sprints/project/:projectId`
+  - `PATCH /api/sprints/:id`
+  - `DELETE /api/sprints/:id`
+  - `GET /api/sprints/:id/completion`
+- Sprint cards now show a completion indicator (done/total tasks, percentage, progress bar).
+
+### Task management
+
+- Tasks can now be edited with real backend updates (not local-only):
+  - `PATCH /api/tasks/:id`
+- Tasks can be deleted through the API:
+  - `DELETE /api/tasks/:id`
+- Existing task status route is still supported:
+  - `PATCH /api/tasks/:id/status`
+
+### New docs and diagrams
+
+- Added daily change notes:
+  - `TODAY_CHANGES.md`
+  - `CHANGES_TODAY.txt`
+- Added PlantUML class diagrams:
+  - `CLASS_DIAGRAM_DOMAIN.puml` (domain entities/relations)
+  - `CLASS_DIAGRAM_API.puml` (routes/controllers/middleware/data access)
+- Added beginner-friendly diagram explanation:
+  - `DIAGRAMS_SUMMARY.txt`
